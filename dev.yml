@@ -1,0 +1,31 @@
+---
+application: dev-tool
+version: "2.0"
+
+setup:
+  go: 1.21.1
+
+commands:
+
+  build:
+    summary: Build the mysql-to-s3 binary and Docker container
+    command: |
+      go build
+      docker build -t mysql-to-s3 -f docker/Dockerfile
+
+  clean:
+    summary: Clean all development binaries and folders
+    command: |
+      go clean
+
+  test:
+    summary: Run all tests
+    command: |
+      docker-compose up -d mysql
+      INTEGRATION_TESTS=1 go test
+
+  reset:
+    summary: Run reset from dev.yml
+    command: |
+      docker-compose down
+      go clean

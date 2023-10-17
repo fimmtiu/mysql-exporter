@@ -1,0 +1,108 @@
+[client]
+port   = 3306
+socket = /var/run/mysqld/mysqld.sock
+
+[mysql]
+default-character-set = utf8mb4
+max_allowed_packet    = 8M
+no_auto_rehash
+
+[mysqldump]
+default-character-set = utf8mb4
+max_allowed_packet    = 8M
+quick
+
+[mysqld]
+bind-address           = 0.0.0.0
+character-set-server   = utf8mb4
+collation-server       = utf8mb4_unicode_520_ci
+user                   = mysql
+default_storage_engine = InnoDB
+socket                 = /var/run/mysqld/mysqld.sock
+pid_file               = /var/run/mysqld/mysqld.pid
+
+# MyISAM #
+key_buffer_size        = 4M
+myisam_recover_options = BACKUP,FORCE
+
+# SAFETY #
+innodb_strict_mode        = 1
+max_allowed_packet        = 8M
+max_connect_errors        = 1000000
+master_info_repository    = TABLE
+relay_log_info_repository = TABLE
+relay_log_recovery        = 1
+slave_net_timeout         = 60
+sync_binlog               = 1
+sync_relay_log            = 1
+sysdate_is_now            = 1
+
+# DATA STORAGE #
+datadir                   = /var/lib/mysql
+innodb_data_home_dir      = /var/lib/mysql
+innodb_log_group_home_dir = /var/lib/mysql
+tmpdir                    = /tmp
+
+# CACHES AND LIMITS #
+max_connections     = 128
+max_heap_table_size = 8M
+open_files_limit    = 65535
+query_cache_type    = 0
+query_cache_size    = 0M
+table_open_cache    = 256
+thread_cache_size   = 4
+tmp_table_size      = 3M
+userstat            = 1
+
+# INNODB #
+innodb_buffer_pool_dump_at_shutdown  = 1
+innodb_buffer_pool_load_at_startup   = 1
+innodb_buffer_pool_size              = 64M
+innodb_checksum_algorithm            = crc32
+innodb_file_per_table                = 1
+innodb_file_format                   = Barracuda
+innodb_file_format_max               = Barracuda
+innodb_flush_log_at_trx_commit       = 1
+innodb_flush_neighbors               = 0
+innodb_log_files_in_group            = 2
+innodb_log_file_size                 = 16M
+innodb_max_dirty_pages_pct           = 90
+innodb_print_all_deadlocks           = ON
+innodb_read_ahead_threshold          = 0
+innodb_stats_on_metadata             = 1
+innodb_stats_persistent              = 0
+innodb_stats_persistent_sample_pages = 25
+innodb_stats_transient_sample_pages  = 25
+innodb_thread_concurrency            = 1
+
+# REPLICATION #
+auto_increment_increment = 3
+auto_increment_offset    = 1
+
+# mysql-to-s3 replication requires row level binlog #
+binlog_format            = ROW
+
+# GTID Consistency is required for mysql-to-s3 replication #
+enforce_gtid_consistency = ON
+expire_logs_days         = 2
+
+# GTID should always be on for mysql-to-s3 #
+gtid_mode                = ON
+log_bin                  = /var/lib/mysql/docker-1-bin-log
+log_slave_updates        = 1
+read_only                = 0
+relay_log                = /var/lib/mysql/docker-1-relay-log
+relay_log_space_limit    = 32M
+server_id                = 1
+
+# LOGGING #
+log_output                    = FILE
+general_log                   = 1
+general_log_file              = /var/lib/mysql/mysql-general.log
+log_error                     = /var/lib/mysql/mysql-error.log
+log_queries_not_using_indexes = 1
+log_slow_verbosity            = full
+log_warnings                  = 2
+slow_query_log                = 1
+slow_query_log_file           = /var/lib/mysql/mysql-slow.log
+long_query_time               = 1

@@ -1,0 +1,37 @@
+version: '3.7'
+
+services:
+  mysql-exporter:
+    build:
+      context: .
+    depends_on:
+      - mysql
+    environment:
+      - YOUR_MOM=true
+    image: mysql-exporter:latest
+    user: "${DOCKER_RUN_AS_UID:-0}:${DOCKER_RUN_AS_GID:-0}"
+    volumes:
+      - '.:/mysql_exporter'
+
+  mysql:
+    environment:
+      MYSQL_ROOT_PASSWORD: 'ScxxEZNf6MvEe8BT'
+      MYSQL_USER: 'warehouse'
+      MYSQL_PASSWORD: 'testtest'
+      MYSQL_DATABASE: 'test_db'
+    image: 'percona/percona-server:5.7'
+    healthcheck:
+      test: ["CMD-SHELL", "mysql --user=root --password=ScxxEZNf6MvEe8BT < /etc/dev_mysql_setup.sql"]
+      start_period: 60s
+      retries: 3
+    volumes:
+      - type: bind
+        source: ./docker/files/dev_mysql.cnf
+        target: /etc/my.cnf
+        read_only: true
+      - type: bind
+        source: ./docker/files/dev_mysql_setup.sql
+        target: /etc/dev_mysql_setup.sql
+        read_only: true
+    ports:
+      - '3306:3306'
