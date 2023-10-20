@@ -21,7 +21,7 @@ commands:
   test:
     summary: Run all tests
     command: |
-      docker-compose up -d mysql
+      docker-compose up -d mysql redis
       INTEGRATION_TESTS=1 go test
 
   reset:

@@ -3,8 +3,6 @@ package main
 import (
 	"errors"
 	"os"
-
-	"github.com/go-mysql-org/go-mysql/mysql"
 )
 
 // This file contains test-specific helper code and is only compiled in test mode.
@@ -78,16 +76,16 @@ func NewFakeMysqlConnection(responses... FakeMysqlResponse) *MysqlConnection {
 	return &MysqlConnection{&FakeMysqlClient{true, responses}}
 }
 
-func NewFakeMysqlResultset(schema *TableSchema, rows [][]any) *mysql.Resultset {
-	resultset := mysql.NewResultset(len(schema.Columns))
-	for i, column := range schema.Columns {
-		resultset.Fields[i] = &mysql.Field{Type: column.MysqlLibraryType()}
-		if !column.Signed {
-			resultset.Fields[i].Flag |= mysql.UNSIGNED_FLAG
-		}
+// func NewFakeMysqlResultset(schema *TableSchema, rows [][]any) *mysql.Resultset {
+// 	resultset := mysql.NewResultset(len(schema.Columns))
+// 	for i, column := range schema.Columns {
+// 		resultset.Fields[i] = &mysql.Field{Type: column.MysqlLibraryType()}
+// 		if !column.Signed {
+// 			resultset.Fields[i].Flag |= mysql.UNSIGNED_FLAG
+// 		}
 
-		for _, row := range rows {
-			value := mysql.FieldValue{Type: mysql.FieldValueTypeNull}
-		}
-	}
-}
+// 		for _, row := range rows {
+// 			value := mysql.FieldValue{Type: mysql.FieldValueTypeNull}
+// 		}
+// 	}
+// }

@@ -53,9 +53,9 @@ SnapshotTableState: An object, not a separate goroutine. Access controlled by a 
   - Has a doneUpTo `map[string]uint64`, contains the starting offsets for the next pending chunks
   - On startup:
     - Read the last_committed_gtid from StateStorage
-    - See if the MySQL server has the GTID in its binlog
+    - See if the MySQL server has the GTID in its binlog and the current BinlogPosition >= stored BinlogPosition
     - For each table:
-      - if the server had the GTID
+      - if the server had the GTID or BinlogPosition has reset:
         - reads table state from StateStorage on startup: either ["done"] or a list of chunk starts that have been completed
           - no progress yet == empty list
       - else

@@ -16,6 +16,7 @@ const DEFAULT_DATADOG_HOST = "127.0.0.1"
 const DEFAULT_DATADOG_PORT = "8125"
 const DEFAULT_MYSQL_PORT = "3306"
 const DEFAULT_REDIS_PORT = "6379"
+const DEFAULT_SNAPSHOT_WORKERS = 10
 
 type Config struct {
 	MysqlHost string
@@ -33,7 +34,7 @@ type Config struct {
 	ExcludeTables []string
 
 	SnapshotChunkSize uint64
-	MaxTimePerBatch time.Duration
+	SnapshotWorkers int64
 
 	DatadogHost string
 	DatadogPort string
@@ -49,7 +50,8 @@ type Config struct {
 }
 
 func NewConfig() Config {
-	var snapshotChunkSize int64
+	var snapshotChunkSize int64 = DEFAULT_SNAPSHOT_CHUNK_SIZE
+	var snapshotWorkers int64 = DEFAULT_SNAPSHOT_WORKERS
 	var err error
 	datadogHost := DEFAULT_DATADOG_HOST
 	datadogPort := DEFAULT_DATADOG_PORT
@@ -69,12 +71,18 @@ func NewConfig() Config {
 	}
 
 	value, found = os.LookupEnv("SNAPSHOT_CHUNK_SIZE")
-	if !found {
-		snapshotChunkSize = DEFAULT_SNAPSHOT_CHUNK_SIZE
-	} else {
+	if found {
 		snapshotChunkSize, err = strconv.ParseInt(value, 10, 32)
-		if err != nil {
+		if err != nil || snapshotChunkSize <= 0 {
 			panic(fmt.Sprintf("Bogus value for SNAPSHOT_CHUNK_SIZE: '%s'", value))
+		}
+	}
+
+	value, found = os.LookupEnv("SNAPSHOT_WORKERS")
+	if found {
+		snapshotWorkers, err = strconv.ParseInt(value, 10, 32)
+		if err != nil || snapshotWorkers <= 0 {
+			panic(fmt.Sprintf("Bogus value for SNAPSHOT_WORKERS: '%s'", value))
 		}
 	}
 
@@ -112,6 +120,7 @@ func NewConfig() Config {
 		ExcludeTables: excludeTables,
 
 		SnapshotChunkSize: uint64(snapshotChunkSize),
+		SnapshotWorkers: snapshotWorkers,
 
 		DatadogHost: datadogHost,
 		DatadogPort: datadogPort,
