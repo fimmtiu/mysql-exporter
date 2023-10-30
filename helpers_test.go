@@ -21,6 +21,17 @@ func WithConfig(key string, val string, fn func()) {
 	fn()
 }
 
+func WithStateStorage(contents map[string]string, fn func()) {
+	oldStateStorage := stateStorage
+	stateStorage = NewStateStorageMemory()
+	defer func() { stateStorage = oldStateStorage }()
+	for key, val := range contents {
+		stateStorage.Set(key, val)
+	}
+
+	fn()
+}
+
 type FakeMysqlResponse struct {
 	Error bool
 	Columns []string
@@ -62,6 +73,9 @@ func (fake *FakeMysqlClient) AddErrorResponse(err string) {
 }
 
 func (fake *FakeMysqlClient) Execute(query string, args ...interface{}) (IMysqlResult, error) {
+	if len(fake.Responses) == 0 {
+		return nil, errors.New("No fake MySQL responses left!")
+	}
 	response := fake.Responses[0]
 	fake.Responses = fake.Responses[1:]
 
