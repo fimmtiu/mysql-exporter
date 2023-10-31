@@ -52,3 +52,16 @@ func TestDoPurgedGtidsExist(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, result)
 }
+
+func TestListTables(t *testing.T) {
+	SetFakeResponses(
+		FakeMysqlResponse{  // SHOW TABLES
+			false,
+			[]string{"Tables_in_honk"},
+			[][]any{{"honk"}, {"bonk"}},
+		},
+	)
+	tables, err := ListTables()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"honk", "bonk"}, tables)
+}

@@ -134,3 +134,19 @@ func DoPurgedGtidsExist(previousGtids, currentGtids string) (bool, error) {
 	}
 	return result == 0, nil
 }
+
+func ListTables() ([]string, error) {
+	rows, err := pool.Execute("SHOW TABLES")
+	if err != nil {
+		return nil, fmt.Errorf("Can't execute SHOW TABLES: %s", err)
+	}
+
+	tables := make([]string, rows.RowNumber())
+	for i := 0; i < rows.RowNumber(); i++ {
+		tables[i], err = rows.GetString(i, 0)
+		if err != nil {
+			return nil, fmt.Errorf("Can't retrieve table name from SHOW TABLES: %s", err)
+		}
+	}
+	return tables, nil
+}

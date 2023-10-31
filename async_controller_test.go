@@ -42,10 +42,8 @@ func TestAsyncControllerExit(t *testing.T) {
 	ac.Exit(nil)
 	ac.Wait()
 
-	select {
-	case <-ac.exitChan:
-		t.Error("exitChan should be empty after Wait() finishes.")
-	default:
+	if _, ok := <-ac.exitChan; ok {
+		t.Error("exitChan should be closed after Exit() is called.")
 	}
 }
 
@@ -71,6 +69,18 @@ func TestAsyncControllerMultipleWait(t *testing.T) {
 	ac.Wait()
 	ac.Wait()
 	ac.Wait()
+}
+
+func TestAsyncControllerDone(t *testing.T) {
+	ac := NewAsyncController()
+	ac.Go(func() error {
+		time.Sleep(100 * time.Millisecond)
+		return nil
+	})
+
+	select {
+	case <-ac.DoneSignal():
+	}
 }
 
 func TestAsyncControllerExitsOnGoroutineError(t *testing.T) {
