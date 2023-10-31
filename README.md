@@ -2,6 +2,8 @@
 
 Assumptions that this relies on:
 
+* Every table has a primary key called `id` that's a monotonically increasing integer. (This restriction could be relaxed later, but that's a version 2 feature.)
+
 * We are okay with a small amount of inaccuracy in the historical data:
   * double `create` events for a single row
   * `update` events for rows that don't exist

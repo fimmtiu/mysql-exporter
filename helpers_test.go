@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 )
@@ -9,6 +10,8 @@ import (
 
 func init() {
 	stateStorage.ClearAll()
+
+	pool = &FakeMysqlPool{FakeMysqlClient{true, []FakeMysqlResponse{}}}
 }
 
 func WithConfig(key string, val string, fn func()) {
@@ -86,20 +89,26 @@ func (fake *FakeMysqlClient) Execute(query string, args ...interface{}) (IMysqlR
 	}
 }
 
-func NewFakeMysqlConnection(responses... FakeMysqlResponse) *MysqlConnection {
-	return &MysqlConnection{&FakeMysqlClient{true, responses}}
+func SetFakeResponses(responses... FakeMysqlResponse) {
+	pool.(*FakeMysqlPool).Client.Responses = responses
 }
 
-// func NewFakeMysqlResultset(schema *TableSchema, rows [][]any) *mysql.Resultset {
-// 	resultset := mysql.NewResultset(len(schema.Columns))
-// 	for i, column := range schema.Columns {
-// 		resultset.Fields[i] = &mysql.Field{Type: column.MysqlLibraryType()}
-// 		if !column.Signed {
-// 			resultset.Fields[i].Flag |= mysql.UNSIGNED_FLAG
-// 		}
+func AddFakeResponses(responses... FakeMysqlResponse) {
+	pool.(*FakeMysqlPool).Client.Responses = append(pool.(*FakeMysqlPool).Client.Responses, responses...)
+}
 
-// 		for _, row := range rows {
-// 			value := mysql.FieldValue{Type: mysql.FieldValueTypeNull}
-// 		}
-// 	}
-// }
+type FakeMysqlPool struct {
+	Client FakeMysqlClient
+}
+
+func (pool *FakeMysqlPool) Execute(query string, args ...interface{}) (IMysqlResult, error) {
+	return pool.Client.Execute(query, args...)
+}
+
+func (pool *FakeMysqlPool) GetConn(ctx context.Context) (IMysqlClient, error) {
+	return &pool.Client, nil
+}
+
+func (pool *FakeMysqlPool) PutConn(conn IMysqlClient) {
+	// No-op.
+}

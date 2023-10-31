@@ -1,11 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/go-mysql-org/go-mysql/client"
 )
+
+const MIN_MYSQL_CONNS = 2
+
+type IMysqlPool interface {
+	Execute(query string, args ...interface{}) (IMysqlResult, error)
+	GetConn(ctx context.Context) (IMysqlClient, error)
+	PutConn(conn IMysqlClient)
+}
 
 type IMysqlClient interface {
 	Execute(query string, args ...interface{}) (IMysqlResult, error)
@@ -18,7 +27,31 @@ type IMysqlResult interface {
 	RowNumber() int
 }
 
-// This tiny wrapper is just to make the client.Conn conform to the IMysqlClient interface.
+// This tiny wrapper is just to make client.Pool conform to the IMysqlPool interface.
+type PoolWrapper struct {
+	pool *client.Pool
+}
+
+func (pw PoolWrapper) Execute(query string, args ...interface{}) (IMysqlResult, error) {
+	conn, err := pw.pool.GetConn(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer pw.pool.PutConn(conn)
+
+	return conn.Execute(query, args...)
+}
+
+func (pw PoolWrapper) GetConn(ctx context.Context) (IMysqlClient, error) {
+	conn, err := pw.pool.GetConn(ctx)
+	return ClientWrapper{conn}, err
+}
+
+func (pw PoolWrapper) PutConn(conn IMysqlClient) {
+	pw.pool.PutConn(conn.(ClientWrapper).conn)
+}
+
+// This tiny wrapper is just to make client.Conn conform to the IMysqlClient interface.
 type ClientWrapper struct {
 	conn *client.Conn
 }
@@ -35,36 +68,29 @@ type MysqlConnection struct {
 	client IMysqlClient
 }
 
-// FIXME: Use connection pooling to limit the number of open connections.
-// https://github.com/go-mysql-org/go-mysql#example-for-connection-pool-v130
-func NewMysqlConnection() *MysqlConnection {
-	hostport := fmt.Sprintf("%s:%s", config.MysqlHost, config.MysqlPort)
-	conn, err := client.Connect(hostport, config.MysqlUser, config.MysqlPassword, config.MysqlDatabase)
-	if err != nil {
-		panic(fmt.Errorf("Can't connect to database '%s': %s", hostport, err))
+func init() {
+	if !InTestMode() {
+		hostport := fmt.Sprintf("%s:%s", config.MysqlHost, config.MysqlPort)
+		pool = PoolWrapper{
+			client.NewPool(
+				logger.Printf, MIN_MYSQL_CONNS, config.MaxMysqlConns, MIN_MYSQL_CONNS,
+				hostport, config.MysqlUser, config.MysqlPassword, config.MysqlDatabase,
+			),
+		}
 	}
-	return &MysqlConnection{ClientWrapper{conn}}
-}
-
-func (conn *MysqlConnection) Execute(query string, args ...interface{}) (IMysqlResult, error) {
-	return conn.client.Execute(query, args...)
-}
-
-func (conn *MysqlConnection) Close() error {
-	return conn.client.Close()
 }
 
 // Returns a uint64 representing the current position of the MySQL server's binary logs, a string
 // containing the executed GTID set, and an error if one occurred. The uint64 will be a combination
 // of the binary log filename and position, guaranteed to monotonically increase.
-func (conn *MysqlConnection) GetBinlogPosition() (uint64, string, error) {
-	_, err := conn.client.Execute("FLUSH TABLES WITH READ LOCK")
+func GetBinlogPosition() (uint64, string, error) {
+	_, err := pool.Execute("FLUSH TABLES WITH READ LOCK")
 	if err != nil {
 		return 0, "", fmt.Errorf("Can't execute FLUSH TABLES: %s", err)
 	}
-	defer func() { conn.client.Execute("UNLOCK TABLES")	}()
+	defer func() { pool.Execute("UNLOCK TABLES") }()
 
-	rows, err := conn.client.Execute("SHOW MASTER STATUS")
+	rows, err := pool.Execute("SHOW MASTER STATUS")
 	if err != nil {
 		return 0, "", fmt.Errorf("Can't execute SHOW MASTER STATUS: %s", err)
 	}
@@ -85,19 +111,19 @@ func (conn *MysqlConnection) GetBinlogPosition() (uint64, string, error) {
 	return ParseBinlogPosition(file, pos), gtidset, nil
 }
 
-// The "binlog position" is the binary log's index number in the high 32 bits and the position within that log
-// in the low 32 bits.
+// The "binlog position" is the binary log's index number in the high 24 bits and the position within that log
+// in the low 40 bits.
 func ParseBinlogPosition(file string, pos int64) uint64 {
 	dotIndex := strings.Index(file, ".")
-	return uint64(MustParseInt(file[dotIndex+1:]))<<32 | uint64(pos)
+	return uint64(MustParseInt(file[dotIndex+1:]))<<40 | uint64(pos)
 }
 
 
 // Returns true if there exist GTIDs which mysql-exporter has not processed which have expired
 // from the server's binary logs.
-func (conn *MysqlConnection) DoPurgedGtidsExist(previousGtids, currentGtids string) (bool, error) {
+func DoPurgedGtidsExist(previousGtids, currentGtids string) (bool, error) {
 	sql := fmt.Sprintf(`SELECT GTID_SUBSET(GTID_SUBTRACT("%s", "%s"), "%s")`, currentGtids, previousGtids, currentGtids)
-	rows, err := conn.client.Execute(sql)
+	rows, err := pool.Execute(sql)
 	if err != nil {
 		return false, fmt.Errorf("Can't execute SELECT GTID_SUBSET: %s", err)
 	}

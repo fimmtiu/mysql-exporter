@@ -17,6 +17,7 @@ const DEFAULT_DATADOG_PORT = "8125"
 const DEFAULT_MYSQL_PORT = "3306"
 const DEFAULT_REDIS_PORT = "6379"
 const DEFAULT_SNAPSHOT_WORKERS = 10
+const DEFAULT_MYSQL_CONNECTIONS = int64(10)
 
 type Config struct {
 	MysqlHost string
@@ -24,6 +25,7 @@ type Config struct {
 	MysqlUser string
 	MysqlPassword string
 	MysqlPort string
+	MaxMysqlConns int
 
 	RedisHost string
 	RedisPort string
@@ -59,10 +61,19 @@ func NewConfig() Config {
 	mysqlPort := DEFAULT_MYSQL_PORT
 	redisPort := DEFAULT_REDIS_PORT
 	excludeTables := []string{}
+	maxMysqlConns := DEFAULT_MYSQL_CONNECTIONS
 
 	value, found := os.LookupEnv("MYSQL_PORT")
 	if found {
 		mysqlPort = value
+	}
+
+	value, found = os.LookupEnv("MYSQL_MAX_CONNS")
+	if found {
+		maxMysqlConns, err = strconv.ParseInt(value, 10, 32)
+		if err != nil || maxMysqlConns <= 0 || maxMysqlConns > 10_000 {
+			panic(fmt.Sprintf("Bogus value for SNAPSHOT_CHUNK_SIZE: '%s'", value))
+		}
 	}
 
 	value, found = os.LookupEnv("REDIS_PORT")
@@ -110,6 +121,7 @@ func NewConfig() Config {
 		MysqlUser: os.Getenv("MYSQL_USER"),
 		MysqlPassword: os.Getenv("MYSQL_PASSWORD"),
 		MysqlPort: mysqlPort,
+		MaxMysqlConns: int(maxMysqlConns),
 
 		RedisHost: os.Getenv("REDIS_HOST"),
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),

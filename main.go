@@ -16,6 +16,7 @@ var config Config
 var datadog *statsd.Client
 var UTC *time.Location
 var stateStorage StateStorage
+var pool IMysqlPool
 
 // Common code for initializing tests.
 func init() {
