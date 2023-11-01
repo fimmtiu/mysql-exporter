@@ -1,8 +1,12 @@
 package main
 
+import "fmt"
+
 type Snapshotter struct {
 	State *SnapshotState
 	Workers *AsyncController
+	PendingIntervalsChan chan PendingInterval
+	CompletedIntervalsChan chan PendingInterval
 	ExitChan chan struct{}
 }
 
@@ -10,9 +14,11 @@ func NewSnapshotter() *Snapshotter {
 	tables := getTableList()
 
 	return &Snapshotter{
-		State: NewSnapshotState(tables),
-		Workers: NewAsyncController(),
-		ExitChan: make(chan struct{}),
+		NewSnapshotState(tables),
+		NewAsyncController(),
+		make(chan PendingInterval),
+		make(chan PendingInterval),
+		make(chan struct{}),
 	}
 }
 
@@ -22,14 +28,34 @@ func (s *Snapshotter) Run() {
 	}
 	logger.Printf("Started %d snapshot workers.", config.SnapshotWorkers)
 
-	select {
-	case <-s.ExitChan:
-		logger.Printf("Signalling all workers to exit.")
-		s.Workers.Exit(nil)
-	case <-s.Workers.DoneSignal():
-		logger.Printf("The snapshot is complete.")
+	nextInterval, ok := s.State.GetNextPendingInterval()
+	if !ok {
+		panic(fmt.Errorf("No pending intervals at the start of the snapshot?"))
 	}
-	s.Workers.Wait()
+
+	for {
+		select {
+		case s.PendingIntervalsChan <- nextInterval:
+			nextInterval, ok = s.State.GetNextPendingInterval()
+			if !ok {
+				close(s.PendingIntervalsChan)
+			}
+		case completedInterval := <- s.CompletedIntervalsChan:
+			err := s.State.MarkIntervalDone(completedInterval)
+			if err != nil {
+				panic(err)
+			}
+		case <-s.ExitChan:
+			logger.Printf("Signalling all workers to exit.")
+			s.Workers.Exit(nil)
+			s.Workers.Wait()
+			return
+		case <-s.Workers.DoneSignal():
+			logger.Printf("The snapshot is complete.")
+			s.Workers.Wait()
+			return
+		}
+	}
 }
 
 func (s *Snapshotter) Exit() {
@@ -39,9 +65,15 @@ func (s *Snapshotter) Exit() {
 func (s *Snapshotter) runWorker() error {
 	for {
 		select {
-
+		case interval, ok := <-s.PendingIntervalsChan:
+			if !ok {
+				return nil
+			}
+			// FIXME: get mysql rows
+			// FIXME: write data to sink
+			s.CompletedIntervalsChan <- interval
 		case <-s.Workers.ExitSignal():
-			break
+			return nil
 		}
 	}
 }
@@ -52,9 +84,10 @@ func getTableList() []string {
 		panic(err)
 	}
 
-	for i := range tables {
+	for i := 0; i < len(tables); i++ {
 		if StringInList(tables[i], config.ExcludeTables) {
 			tables = DeleteFromSlice(tables, i)
+			i--
 		}
 	}
 	return tables

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 )
 
 // Half-open range, like [start, end). `End` is not in the interval.
@@ -117,7 +116,6 @@ type PendingInterval struct {
 }
 
 type SnapshotState struct {
-	Lock sync.Mutex
 	Tables map[string]*SnapshotTableState
 	PendingIntervals *list.List
 }
@@ -125,7 +123,6 @@ type SnapshotState struct {
 func NewSnapshotState(tableNames []string) *SnapshotState {
 	var err error
 	state := SnapshotState{
-		sync.Mutex{},
 		make(map[string]*SnapshotTableState, len(tableNames)),
 		list.New(),
 	}
@@ -173,19 +170,8 @@ func NewSnapshotState(tableNames []string) *SnapshotState {
 	return &state
 }
 
-func (state *SnapshotState) String() string {
-	state.Lock.Lock()
-	defer state.Lock.Unlock()
-
-	return "FIXME"
-	// return fmt.Sprintf("SnapshotState{\n  CompletedIntervals: %v,\n  BusyIntervals: %v,\n  PendingIntervals: %v,\n  UpperBounds: %v\n}", state.CompletedIntervals, state.BusyIntervals, state.PendingIntervals, state.UpperBounds)
-}
-
 // Returns `false` if there's no more work for any worker to do.
 func (state *SnapshotState) GetNextPendingInterval() (PendingInterval, bool) {
-	state.Lock.Lock()
-	defer state.Lock.Unlock()
-
 	if state.PendingIntervals.Front() == nil {
 		return PendingInterval{}, false
 	}
@@ -200,9 +186,6 @@ func (state *SnapshotState) GetNextPendingInterval() (PendingInterval, bool) {
 // Mark a chunk of work as done. If this is the last chunk of work for this table,
 // mark the entire table as done.
 func (state *SnapshotState) MarkIntervalDone(pendingInterval PendingInterval) error {
-	state.Lock.Lock()
-	defer state.Lock.Unlock()
-
 	tableState := state.Tables[pendingInterval.TableName]
 	if tableState.CompletedIntervals.Includes(pendingInterval.Interval) {
 		panic(fmt.Errorf("Interval %v already completed for table %s (%v)", pendingInterval.Interval, tableState.TableName, tableState.CompletedIntervals))
@@ -217,17 +200,12 @@ func (state *SnapshotState) MarkIntervalDone(pendingInterval PendingInterval) er
 
 // Returns true if all tables have been fully snapshotted.
 func (state *SnapshotState) Done() bool {
-	state.Lock.Lock()
-	defer state.Lock.Unlock()
-
 	return len(state.Tables) == 0
 }
 
 // If there's still work to do on this table (any gaps in the list of completed
 // chunks, or chunks between the highest completed chunk and the upper bound),
 // add a new chunk to the work queue.
-//
-// Assumes that the lock is already held by the calling function.
 func (state *SnapshotState) addNextPendingInterval(table *SnapshotTableState) {
 	gap := table.BusyIntervals.NextGap(config.SnapshotChunkSize)
 	if gap.Start <= table.MaxId {
@@ -241,8 +219,6 @@ func (state *SnapshotState) addNextPendingInterval(table *SnapshotTableState) {
 
 // Mark a table as done. This means that the entire table has been snapshotted and
 // there are no more chunks to process.
-//
-// Assumes that the lock is already held by the calling function.
 func (state *SnapshotState) markTableDone(tableName string) error {
 	delete(state.Tables, tableName)
 	return stateStorage.Set("table_snapshot_progress/" + tableName, "done")
