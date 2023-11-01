@@ -145,7 +145,7 @@ BinlogReader: gets passed the GTID to start from
   - If we get an exit signal
     - Stop reading the binlog
     - Tell all ParquetWriters to exit
-      - Wait for them to all exit (use AsyncController.Wait())
+      - Wait for them to all exit (use WorkerGroup.Wait())
     - Signal GtidTracker to exit
       - Wait for it to exit
     - Exit

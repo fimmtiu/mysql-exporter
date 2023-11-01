@@ -8,15 +8,15 @@ import (
 
 func TestShutdownMonitorTerm(t *testing.T) {
 	StartShutdownMonitor()
-	controller := NewAsyncController()
+	workerGroup := NewWorkerGroup()
 
 	// This background goroutine kills itself after 1 second, then ensures that the ShutdownMonitor noticed it.
-	controller.Go(func() error {
+	workerGroup.Go(func() error {
 		time.Sleep(1 * time.Second)
 		syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
-		<-controller.ExitSignal()
+		<-workerGroup.ExitSignal()
 		return nil
 	})
 
-	controller.Wait()
+	workerGroup.Wait()
 }

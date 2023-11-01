@@ -10,7 +10,7 @@ const MAX_RETRIES = 10   // Picked this number out of the air. Let's revisit thi
 
 type Snapshotter struct {
 	State *SnapshotState
-	Workers *AsyncController
+	Workers *WorkerGroup
 	PendingIntervalsChan chan PendingInterval
 	CompletedIntervalsChan chan PendingInterval
 	ExitChan chan struct{}
@@ -21,7 +21,7 @@ func NewSnapshotter() *Snapshotter {
 
 	return &Snapshotter{
 		NewSnapshotState(tables),
-		NewAsyncController(),
+		NewWorkerGroup(),
 		make(chan PendingInterval),
 		make(chan PendingInterval),
 		make(chan struct{}),

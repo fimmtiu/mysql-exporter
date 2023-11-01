@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestAsyncControllerWait(t *testing.T) {
-	ac := NewAsyncController()
+func TestWorkerGroupWait(t *testing.T) {
+	ac := NewWorkerGroup()
 	ac.Go(func() error {
 		time.Sleep(100 * time.Millisecond)
 		return nil
@@ -25,8 +25,8 @@ func TestAsyncControllerWait(t *testing.T) {
 	ac.Wait()
 }
 
-func TestAsyncControllerExit(t *testing.T) {
-	ac := NewAsyncController()
+func TestWorkerGroupExit(t *testing.T) {
+	ac := NewWorkerGroup()
 	ac.Go(func() error {
 		<-ac.ExitSignal()
 		return nil
@@ -47,8 +47,8 @@ func TestAsyncControllerExit(t *testing.T) {
 	}
 }
 
-func TestAsyncControllerError(t *testing.T) {
-	ac := NewAsyncController()
+func TestWorkerGroupError(t *testing.T) {
+	ac := NewWorkerGroup()
 	ac.Go(func() error {
 		<-ac.ExitSignal()
 		return nil
@@ -59,8 +59,8 @@ func TestAsyncControllerError(t *testing.T) {
 	assert.Equal(t, err.Error(), "HONK")
 }
 
-func TestAsyncControllerMultipleWait(t *testing.T) {
-	ac := NewAsyncController()
+func TestWorkerGroupMultipleWait(t *testing.T) {
+	ac := NewWorkerGroup()
 	ac.Go(func() error {
 		<-ac.ExitSignal()
 		return nil
@@ -71,8 +71,8 @@ func TestAsyncControllerMultipleWait(t *testing.T) {
 	ac.Wait()
 }
 
-func TestAsyncControllerDone(t *testing.T) {
-	ac := NewAsyncController()
+func TestWorkerGroupDone(t *testing.T) {
+	ac := NewWorkerGroup()
 	ac.Go(func() error {
 		time.Sleep(100 * time.Millisecond)
 		return nil
@@ -83,8 +83,8 @@ func TestAsyncControllerDone(t *testing.T) {
 	}
 }
 
-func TestAsyncControllerExitsOnGoroutineError(t *testing.T) {
-	ac := NewAsyncController()
+func TestWorkerGroupExitsOnGoroutineError(t *testing.T) {
+	ac := NewWorkerGroup()
 	ac.Go(func() error {
 		<-ac.ExitSignal()
 		return nil

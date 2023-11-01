@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 )
 
-type AsyncController struct {
+type WorkerGroup struct {
 	waitGroup sync.WaitGroup
 	exitChan chan struct{}
 	doneChan chan struct{}
@@ -17,14 +17,14 @@ type AsyncController struct {
 	err error
 }
 
-func NewAsyncController() *AsyncController {
-	return &AsyncController{sync.WaitGroup{}, make(chan struct{}), make(chan struct{}), atomic.Int32{}, nil}
+func NewWorkerGroup() *WorkerGroup {
+	return &WorkerGroup{sync.WaitGroup{}, make(chan struct{}), make(chan struct{}), atomic.Int32{}, nil}
 }
 
-// This registers a new goroutine with the AsyncController and starts it. (Just a wrapper around the 'go'
-// keyword.) If the goroutine returns an error, the AsyncController will signal all other goroutines to exit,
+// This registers a new goroutine with the WorkerGroup and starts it. (Just a wrapper around the 'go'
+// keyword.) If the goroutine returns an error, the WorkerGroup will signal all other goroutines to exit,
 // then return the error from Wait().
-func (ac *AsyncController) Go(fn func() error) {
+func (ac *WorkerGroup) Go(fn func() error) {
 	ac.waitGroup.Add(1)
 	ac.count.Add(1)
 
@@ -44,26 +44,26 @@ func (ac *AsyncController) Go(fn func() error) {
 }
 
 // This returns a channel which will close when all goroutines have naturally exited.
-func (ac *AsyncController) DoneSignal() <-chan struct{} {
+func (ac *WorkerGroup) DoneSignal() <-chan struct{} {
 	return ac.doneChan
 }
 
 // This returns a channel which will be closed when it's time for all goroutines to exit. Goroutines started
 // by Go() must watch this channel and exit when it's closed.
-func (ac *AsyncController) ExitSignal() <-chan struct{} {
+func (ac *WorkerGroup) ExitSignal() <-chan struct{} {
 	return ac.exitChan
 }
 
-// This signals all goroutines to exit. Supply 'err' if the controller is dying because of an error; otherwise,
+// This signals all goroutines to exit. Supply 'err' if the group is dying because of an error; otherwise,
 // just pass nil.
-func (ac *AsyncController) Exit(err error) {
+func (ac *WorkerGroup) Exit(err error) {
 	ac.err = err
 	close(ac.exitChan)
 }
 
 // This blocks until all goroutines have exited. If the caller gave an error to Exit(), this returns the error
 // that they passed. If called multiple times, subsequent calls will return nil immediately and do nothing.
-func (ac *AsyncController) Wait() error {
+func (ac *WorkerGroup) Wait() error {
 	ac.waitGroup.Wait()
 	err := ac.err
 	ac.err = nil

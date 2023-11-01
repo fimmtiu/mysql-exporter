@@ -22,7 +22,7 @@ var pool IMysqlPool
 func init() {
 	logger = log.New(os.Stdout, "", log.Ldate | log.Ltime)
 	config = NewConfig()
-	// mysqlController = NewAsyncController()
+	// mysqlController = NewWorkerGroup()
 
 	var err error
 	UTC, err = time.LoadLocation("UTC")

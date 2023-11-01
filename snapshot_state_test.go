@@ -111,7 +111,7 @@ func TestSnapshotStateNeedsSnapshot(t *testing.T) {
 func TestSnapshotStateConcurrent(t *testing.T) {
 	stateStorage.ClearAll()
 	WithConfig("SNAPSHOT_CHUNK_SIZE", "100", func() {
-		asyncController := NewAsyncController()
+		workerGroup := NewWorkerGroup()
 		tableNames := []string{"foo", "bar", "baz", "quux", "honk", "bonk"}
 		SetFakeSnapshotResponses(31337, 35000, false)
 		AddFakeResponses(
@@ -138,7 +138,7 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 
 		// Three workers per table should ensure that they come into conflict.
 		for i := 0; i < len(tableNames) * 3; i++ {
-			asyncController.Go(func() error {
+			workerGroup.Go(func() error {
 				for {
 					interval, ok := <-inputChan
 					if !ok {
@@ -163,8 +163,8 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 			case interval := <-outputChan:
 				err := state.MarkIntervalDone(interval)
 				assert.NoError(t, err)
-			case <-asyncController.DoneSignal():
-				asyncController.Wait()
+			case <-workerGroup.DoneSignal():
+				workerGroup.Wait()
 				break
 			}
 		}
