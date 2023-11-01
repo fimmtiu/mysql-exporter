@@ -9,11 +9,10 @@ import (
 const MAX_RETRIES = 10   // Picked this number out of the air. Let's revisit this later.
 
 type Snapshotter struct {
-	State *SnapshotState
+	State SnapshotState
 	Workers *WorkerGroup
 	PendingIntervalsChan chan PendingInterval
 	CompletedIntervalsChan chan PendingInterval
-	ExitChan chan struct{}
 }
 
 func NewSnapshotter() *Snapshotter {
@@ -24,11 +23,14 @@ func NewSnapshotter() *Snapshotter {
 		NewWorkerGroup(),
 		make(chan PendingInterval),
 		make(chan PendingInterval),
-		make(chan struct{}),
 	}
 }
 
 func (s *Snapshotter) Run() {
+	if s.State.Done() {
+		return
+	}
+
 	for i := 0; i < int(config.SnapshotWorkers); i++ {
 		s.Workers.Go(s.runWorker)
 	}
@@ -45,17 +47,13 @@ func (s *Snapshotter) Run() {
 			nextInterval, ok = s.State.GetNextPendingInterval()
 			if !ok {
 				close(s.PendingIntervalsChan)
+				s.PendingIntervalsChan = nil
 			}
 		case completedInterval := <- s.CompletedIntervalsChan:
 			err := s.State.MarkIntervalDone(completedInterval)
 			if err != nil {
 				panic(err)
 			}
-		case <-s.ExitChan:
-			logger.Printf("Signalling all workers to exit.")
-			s.Workers.Exit(nil)
-			s.Workers.Wait()
-			return
 		case <-s.Workers.DoneSignal():
 			logger.Printf("The snapshot is complete.")
 			s.Workers.Wait()
@@ -65,7 +63,9 @@ func (s *Snapshotter) Run() {
 }
 
 func (s *Snapshotter) Exit() {
-	s.ExitChan <- struct{}{}
+	logger.Printf("Signalling all workers to exit.")
+	s.Workers.Exit(nil)
+	s.Workers.Wait()
 }
 
 func (s *Snapshotter) runWorker() error {

@@ -65,3 +65,18 @@ func TestListTables(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"honk", "bonk"}, tables)
 }
+
+func TestGetTableSchema(t *testing.T) {
+	SetFakeResponses(
+		FakeMysqlResponse{  // SHOW CREATE TABLE
+			false,
+			[]string{"Table", "Create Table"},
+			[][]any{{"email_addresses", MustReadFile("test_data/email_addresses_schema.sql")}},
+		},
+	)
+	schema, err := GetTableSchema("email_addresses")
+	assert.NoError(t, err)
+	assert.Equal(t, "email_addresses", schema.Name)
+	assert.Equal(t, "id", schema.Columns[0].Name)
+	assert.Equal(t, "account_id", schema.Columns[8].Name)
+}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -17,6 +19,7 @@ var datadog *statsd.Client
 var UTC *time.Location
 var stateStorage StateStorage
 var pool IMysqlPool
+var snapshotter *Snapshotter
 
 // Common code for initializing tests.
 func init() {
@@ -46,7 +49,38 @@ func main() {
 		NotifyReleaseStages: []string{"production", "staging"},
 	})
 
-	StartShutdownMonitor()
+	listenForSignals()
+
+	// FIXME: Do stuff
+	snapshotter = NewSnapshotter()
+	snapshotter.Run()
+	snapshotter = nil
+
 
 	logger.Print("Exited.")
+}
+
+// Sets up the signal handling: die gracefully on INT or TERM, panic on USR1.
+func listenForSignals() {
+	var terminateChannel chan os.Signal
+	var panicChannel chan os.Signal
+
+	signal.Notify(terminateChannel, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(panicChannel, syscall.SIGUSR1)
+
+	go func() {
+		select {
+		case sig := <-terminateChannel:
+			logger.Printf("Received %s signal (%d).", sig.String(), sig)
+			gracefulShutdown()
+		case <-panicChannel:
+			panic("OH GOD WE'RE BONED LET'S FREAK OUT")   // For testing the panic behaviour.
+		}
+	}()
+}
+
+func gracefulShutdown() {
+	if snapshotter != nil {
+		snapshotter.Exit()
+	}
 }

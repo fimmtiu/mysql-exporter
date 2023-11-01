@@ -122,7 +122,7 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
 			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
 		)
-		state := NewSnapshotState(tableNames)
+		state := NewSnapshotState(tableNames).(*RealSnapshotState)
 		for _, tableName := range tableNames {
 			tableState := state.Tables[tableName]
 			assert.Equal(t, IntervalList{}, tableState.CompletedIntervals)
@@ -140,6 +140,9 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 		for i := 0; i < len(tableNames) * 3; i++ {
 			workerGroup.Go(func() error {
 				for {
+					if inputChan == nil {
+						break
+					}
 					interval, ok := <-inputChan
 					if !ok {
 						break
@@ -153,19 +156,21 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 		nextInterval, ok := state.GetNextPendingInterval()
 		assert.True(t, ok)
 
+		done:
 		for {
 			select {
 			case inputChan <- nextInterval:
 				nextInterval, ok = state.GetNextPendingInterval()
 				if !ok {
 					close(inputChan)
+					inputChan = nil
 				}
 			case interval := <-outputChan:
 				err := state.MarkIntervalDone(interval)
 				assert.NoError(t, err)
 			case <-workerGroup.DoneSignal():
 				workerGroup.Wait()
-				break
+				break done
 			}
 		}
 
@@ -187,7 +192,7 @@ func TestSnapshotStatePicksUpFromLastStop(t *testing.T) {
 			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 		)
-		state := NewSnapshotState(tableNames)
+		state := NewSnapshotState(tableNames).(*RealSnapshotState)
 		fmt.Printf("Pending intervals len %d\n", state.PendingIntervals.Len())
 		for e := state.PendingIntervals.Front(); e != nil; e = e.Next() {
 			fmt.Printf("Pending interval: %v\n", e.Value)
@@ -216,7 +221,7 @@ func TestSnapshotStatePicksUpFromLastStop(t *testing.T) {
 			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 		)
-		state = NewSnapshotState(tableNames)
+		state = NewSnapshotState(tableNames).(*RealSnapshotState)
 
 		count := 0
 		for !state.Done() {

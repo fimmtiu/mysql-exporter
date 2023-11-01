@@ -150,3 +150,16 @@ func ListTables() ([]string, error) {
 	}
 	return tables, nil
 }
+
+func GetTableSchema(tableName string) (*TableSchema, error) {
+	rows, err := pool.Execute("SHOW CREATE TABLE `" + tableName + "`")
+	if err != nil {
+		return nil, fmt.Errorf("Can't execute SHOW CREATE TABLE: %s", err)
+	}
+
+	createTable, err := rows.GetString(0, 1)
+	if err != nil {
+		return nil, fmt.Errorf("Can't fetch CREATE TABLE column: %s", err)
+	}
+	return ParseSchema(createTable), nil
+}
