@@ -111,6 +111,7 @@ func TestSnapshotStateNeedsSnapshot(t *testing.T) {
 func TestSnapshotStateConcurrent(t *testing.T) {
 	stateStorage.ClearAll()
 	WithConfig("SNAPSHOT_CHUNK_SIZE", "100", func() {
+		asyncController := NewAsyncController()
 		tableNames := []string{"foo", "bar", "baz", "quux", "honk", "bonk"}
 		SetFakeSnapshotResponses(31337, 35000, false)
 		AddFakeResponses(
@@ -132,21 +133,40 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 		assert.Equal(t, Interval{0, 100}, state.PendingIntervals.Front().Value.(PendingInterval).Interval)
 		assert.Equal(t, Interval{0, 100}, state.PendingIntervals.Back().Value.(PendingInterval).Interval)
 
-		// Three workers filling in each table.
+		inputChan := make(chan PendingInterval)
+		outputChan := make(chan PendingInterval)
+
+		// Three workers per table should ensure that they come into conflict.
 		for i := 0; i < len(tableNames) * 3; i++ {
-			go func() {
+			asyncController.Go(func() error {
 				for {
-					interval, ok := state.GetNextPendingInterval()
+					interval, ok := <-inputChan
 					if !ok {
 						break
 					}
-					state.MarkIntervalDone(interval)
+					outputChan <- interval
 				}
-			}()
+				return nil
+			})
 		}
 
-		for !state.Done() {
-			// busy-wait for everything to finish
+		nextInterval, ok := state.GetNextPendingInterval()
+		assert.True(t, ok)
+
+		for {
+			select {
+			case inputChan <- nextInterval:
+				nextInterval, ok = state.GetNextPendingInterval()
+				if !ok {
+					close(inputChan)
+				}
+			case interval := <-outputChan:
+				err := state.MarkIntervalDone(interval)
+				assert.NoError(t, err)
+			case <-asyncController.DoneSignal():
+				asyncController.Wait()
+				break
+			}
 		}
 
 		assert.Empty(t, state.Tables)

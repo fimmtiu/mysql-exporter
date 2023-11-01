@@ -1,6 +1,12 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+	"time"
+)
+
+const MAX_RETRIES = 10   // Picked this number out of the air. Let's revisit this later.
 
 type Snapshotter struct {
 	State *SnapshotState
@@ -65,13 +71,21 @@ func (s *Snapshotter) Exit() {
 func (s *Snapshotter) runWorker() error {
 	for {
 		select {
-		case interval, ok := <-s.PendingIntervalsChan:
+		case pi, ok := <-s.PendingIntervalsChan:
 			if !ok {
 				return nil
 			}
-			// FIXME: get mysql rows
-			// FIXME: write data to sink
-			s.CompletedIntervalsChan <- interval
+
+			result, err := getRowChunk(pi)
+			if err != nil {
+				panic(err)
+			}
+			for row := 0; row < result.RowNumber(); row++ {
+
+			}
+
+			s.CompletedIntervalsChan <- pi
+
 		case <-s.Workers.ExitSignal():
 			return nil
 		}
@@ -91,4 +105,32 @@ func getTableList() []string {
 		}
 	}
 	return tables
+}
+
+func getRowChunk(pi PendingInterval) (IMysqlResult, error) {
+	retries := 0
+	var result IMysqlResult
+	var err error
+
+	for retries < MAX_RETRIES {
+		sql := fmt.Sprintf("SELECT * FROM `%s` WHERE `id` >= %d AND `id` < %d", pi.TableName, pi.Interval.Start, pi.Interval.End)
+		result, err = pool.Execute(sql)
+		if err == nil {
+			return result, nil
+		} else {
+			// FIXME: If the error looks like a schema issue, re-fetch the CREATE TABLE and parse the schema again
+			// before we retry. (We also need some way to notify the sink that this has happened, so this might
+			// need to be done at the runWorker level.)
+
+			// 2**8 is about four and a half minutes, which is the longest we'll wait between retries.
+			exponent := retries
+			if exponent > 8 {
+				exponent = 8
+			}
+			retries++
+			time.Sleep(time.Second * time.Duration(math.Pow(2, float64(exponent))))
+		}
+	}
+
+	return nil, err
 }
