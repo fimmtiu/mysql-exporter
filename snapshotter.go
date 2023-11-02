@@ -21,9 +21,12 @@ func NewSnapshotter() *Snapshotter {
 	if err != nil {
 		panic(err)
 	}
+	return NewCustomSnapshotter(NewSnapshotState(tables))
+}
 
+func NewCustomSnapshotter(state SnapshotState) *Snapshotter {
 	return &Snapshotter{
-		NewSnapshotState(tables),
+		state,
 		NewWorkerGroup(),
 		make(chan PendingInterval),
 		make(chan PendingInterval),
@@ -33,6 +36,7 @@ func NewSnapshotter() *Snapshotter {
 
 // Returns true if we should keep going and false if we should exit.
 func (s *Snapshotter) Run() bool {
+	successfulExit := true
 	if s.State.Done() {
 		return true
 	}
@@ -64,15 +68,15 @@ func (s *Snapshotter) Run() bool {
 		case <-s.ExitChan:
 			logger.Printf("Signalling all workers to exit.")
 			s.Workers.Exit(nil)
-			s.Workers.Wait()
-			break loop
+			s.ExitChan = nil
+			successfulExit = false
 		case <-s.Workers.DoneSignal():
 			logger.Printf("The snapshot is complete.")
-			s.Workers.Wait()
-			return true
+			break loop
 		}
 	}
-	return false
+	s.Workers.Wait()
+	return successfulExit
 }
 
 func (s *Snapshotter) Exit() {
@@ -91,6 +95,7 @@ func (s *Snapshotter) runWorker() error {
 			if err != nil {
 				panic(err)
 			}
+			fmt.Printf("Row number: %d\n", result.RowNumber())
 			for row := 0; row < result.RowNumber(); row++ {
 
 			}
@@ -111,6 +116,7 @@ func getRowChunk(pi PendingInterval) (IMysqlResult, error) {
 	for retries < MAX_RETRIES {
 		sql := fmt.Sprintf("SELECT * FROM `%s` WHERE `id` >= %d AND `id` < %d", pi.TableName, pi.Interval.Start, pi.Interval.End)
 		result, err = pool.Execute(sql)
+		fmt.Printf("Result %v, err %v\n", result, err)
 		if err == nil {
 			return result, nil
 		} else {

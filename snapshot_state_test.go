@@ -14,14 +14,14 @@ func SetFakeSnapshotResponses(binlogPos int, gtidMax int, purgedGtids bool) {
 		isSubset = 0
 	}
 	SetFakeResponses(
-		FakeMysqlResponse{false, []string{}, [][]any{}}, // FLUSH TABLES
+		FakeMysqlResponse{false, 0, []string{}, [][]any{}}, // FLUSH TABLES
 		FakeMysqlResponse{  // SHOW MASTER STATUS
-			false,
+			false, 0,
 			[]string{"File", "Position", "Binlog_Do_DB", "Binlog_Ignore_DB", "Executed_Gtid_Set"},
 			[][]any{{"honk-bin-log.00001", int64(binlogPos), "", "", fmt.Sprintf("3a1b9647-46ad-11ee-8a65-0242c0a89007:1-%d", gtidMax)}},
 		},
-		FakeMysqlResponse{false, []string{}, [][]any{}}, // UNLOCK TABLES,
-		FakeMysqlResponse{false, []string{"GTID_SUBSET(...)"}, [][]any{{isSubset}}}, // SELECT GTID_SUBSET
+		FakeMysqlResponse{false, 0, []string{}, [][]any{}}, // UNLOCK TABLES,
+		FakeMysqlResponse{false, 0, []string{"GTID_SUBSET(...)"}, [][]any{{isSubset}}}, // SELECT GTID_SUBSET
 	)
 }
 
@@ -63,12 +63,12 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 		tableNames := []string{"foo", "bar", "baz", "quux", "honk", "bonk"}
 		SetFakeSnapshotResponses(31337, 35000, false)
 		AddFakeResponses(
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
 		)
 		state := NewSnapshotState(tableNames).(*RealSnapshotState)
 		for _, tableName := range tableNames {
@@ -104,8 +104,7 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 		nextInterval, ok := state.GetNextPendingInterval()
 		assert.True(t, ok)
 
-		done:
-		for {
+		loop: for {
 			select {
 			case inputChan <- nextInterval:
 				nextInterval, ok = state.GetNextPendingInterval()
@@ -118,7 +117,7 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 				assert.NoError(t, err)
 			case <-workerGroup.DoneSignal():
 				workerGroup.Wait()
-				break done
+				break loop
 			}
 		}
 
@@ -133,12 +132,12 @@ func TestSnapshotStatePicksUpFromLastStop(t *testing.T) {
 		tableNames := []string{"foo", "bar", "baz", "quux", "honk", "bonk"}
 		SetFakeSnapshotResponses(31337, 35000, false)
 		AddFakeResponses(
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 		)
 		state := NewSnapshotState(tableNames).(*RealSnapshotState)
 
@@ -153,12 +152,12 @@ func TestSnapshotStatePicksUpFromLastStop(t *testing.T) {
 		// of work remaining.
 		SetFakeSnapshotResponses(31337, 35000, false)
 		AddFakeResponses(
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
-			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
+			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 		)
 		state = NewSnapshotState(tableNames).(*RealSnapshotState)
 

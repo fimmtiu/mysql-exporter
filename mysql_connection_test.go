@@ -13,13 +13,13 @@ func TestParseBinlogPosition(t *testing.T) {
 
 func TestGetBinlogPosition(t *testing.T) {
 	SetFakeResponses(
-		FakeMysqlResponse{false, []string{}, [][]any{}}, // FLUSH TABLES
+		FakeMysqlResponse{false, 0, []string{}, [][]any{}}, // FLUSH TABLES
 		FakeMysqlResponse{  // SHOW MASTER STATUS
-			false,
+			false, 0,
 			[]string{"File", "Position", "Binlog_Do_DB", "Binlog_Ignore_DB", "Executed_Gtid_Set"},
 			[][]any{{"honk-bin-log.00001", int64(31337), "", "", "3a1b9647-46ad-11ee-8a65-0242c0a89007:1-30243"}},
 		},
-		FakeMysqlResponse{false, []string{}, [][]any{}}, // UNLOCK TABLES
+		FakeMysqlResponse{false, 0, []string{}, [][]any{}}, // UNLOCK TABLES
 	)
 	position, gtidset, err := GetBinlogPosition()
 
@@ -32,7 +32,7 @@ func TestDoPurgedGtidsExist(t *testing.T) {
 	currentGtids := "3a1b9647-46ad-11ee-8a65-0242c0a89007:1-30243"
 	SetFakeResponses(
 		FakeMysqlResponse{  // SELECT GTID_SUBSET
-			false,
+			false, 0,
 			[]string{"GTID_SUBSET(stuff)"},
 			[][]any{{int64(1)}},
 		},
@@ -43,7 +43,7 @@ func TestDoPurgedGtidsExist(t *testing.T) {
 
 	SetFakeResponses(
 		FakeMysqlResponse{  // SELECT GTID_SUBSET
-			false,
+			false, 0,
 			[]string{"GTID_SUBSET(stuff)"},
 			[][]any{{int64(0)}},
 		},
@@ -56,7 +56,7 @@ func TestDoPurgedGtidsExist(t *testing.T) {
 func TestListTables(t *testing.T) {
 	SetFakeResponses(
 		FakeMysqlResponse{  // SHOW TABLES
-			false,
+			false, 0,
 			[]string{"Tables_in_honk"},
 			[][]any{{"honk"}, {"bonk"}},
 		},
@@ -69,7 +69,7 @@ func TestListTables(t *testing.T) {
 func TestListTablesExcludesTables(t *testing.T) {
 	SetFakeResponses(
 		FakeMysqlResponse{  // SHOW TABLES
-			false,
+			false, 0,
 			[]string{"Tables_in_honk"},
 			[][]any{{"foo"}, {"honk"}, {"bonk"}},
 		},
@@ -86,7 +86,7 @@ func TestListTablesExcludesTables(t *testing.T) {
 func TestGetTableSchema(t *testing.T) {
 	SetFakeResponses(
 		FakeMysqlResponse{  // SHOW CREATE TABLE
-			false,
+			false, 0,
 			[]string{"Table", "Create Table"},
 			[][]any{{"email_addresses", MustReadFile("test_data/email_addresses_schema.sql")}},
 		},

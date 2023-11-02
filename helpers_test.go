@@ -7,6 +7,9 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // This file contains test-specific helper code and is only compiled in test mode.
@@ -40,6 +43,7 @@ func WithStateStorage(contents map[string]string, fn func()) {
 
 type FakeMysqlResponse struct {
 	Error bool
+	Repeat int
 	Columns []string
 	Rows [][]any
 }
@@ -72,7 +76,7 @@ func (fake *FakeMysqlClient) AddResponse(response FakeMysqlResponse) {
 
 func (fake *FakeMysqlClient) AddErrorResponse(err string) {
 	fake.Responses = append(fake.Responses, FakeMysqlResponse{
-		true,
+		true, 0,
 		[]string{"Error"},
 		[][]any{{err}},
 	})
@@ -82,13 +86,16 @@ func (fake *FakeMysqlClient) Execute(query string, args ...interface{}) (IMysqlR
 	if len(fake.Responses) == 0 {
 		return nil, errors.New("No fake MySQL responses left!")
 	}
+	fake.Responses[0].Repeat--
 	response := fake.Responses[0]
-	fake.Responses = fake.Responses[1:]
+	if response.Repeat <= 0 {
+		fake.Responses = fake.Responses[1:]
+	}
 
 	if response.Error {
 		return nil, errors.New(response.Rows[0][0].(string))
 	} else {
-		return &FakeMysqlResponse{false, response.Columns, response.Rows}, nil
+		return &response, nil
 	}
 }
 
@@ -114,6 +121,23 @@ func (pool *FakeMysqlPool) GetConn(ctx context.Context) (IMysqlClient, error) {
 
 func (pool *FakeMysqlPool) PutConn(conn IMysqlClient) {
 	// No-op.
+}
+
+func TestPoolExecute(t *testing.T) {
+	SetFakeResponses(
+		FakeMysqlResponse{false, 3, []string{"foo"}, [][]any{{"bar"}}},
+	)
+
+	for i := 0; i < 3; i++ {
+		result, err := pool.Execute("SELECT foo")
+		assert.NoError(t, err)
+		value, err := result.GetString(0, 0)
+		assert.Equal(t, "bar", value)
+	}
+
+	result, err := pool.Execute("SELECT foo")
+	assert.Nil(t, result)
+	assert.Error(t, err)
 }
 
 type FakeSnapshotStateTable struct {
@@ -142,9 +166,13 @@ func NewFakeSnapshotState(tableNames []string, rowsPerTable int) SnapshotState {
 
 func (state *FakeSnapshotState) GetNextPendingInterval() (PendingInterval, bool) {
 	table := state.Tables[rand.Intn(len(state.Tables))]
-	interval := table.PendingIntervals[0]
-	table.PendingIntervals = table.PendingIntervals[1:]
-	return PendingInterval{table.Name, interval}, true
+	if len(table.PendingIntervals) == 0 {
+		return PendingInterval{}, false
+	} else {
+		interval := table.PendingIntervals[0]
+		table.PendingIntervals = table.PendingIntervals[1:]
+		return PendingInterval{table.Name, interval}, true
+	}
 }
 
 func (state *FakeSnapshotState) MarkIntervalDone(pendingInterval PendingInterval) error {
