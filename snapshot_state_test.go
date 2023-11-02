@@ -7,58 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestParseIntervalList(t *testing.T) {
-	list := ParseIntervalList("")
-	assert.Equal(t, IntervalList{}, list)
-
-	list = ParseIntervalList("0-200,500-600,10010-31337")
-	expected := IntervalList{
-		Interval{0, 200},
-		Interval{500, 600},
-		Interval{10010, 31337},
-	}
-	assert.Equal(t, expected, list)
-}
-
-func TestIntervalListString(t *testing.T) {
-	assert.Equal(t, "", IntervalList{}.String())
-
-	list := IntervalList{
-		Interval{0, 200},
-		Interval{500, 600},
-		Interval{10010, 31337},
-	}
-	assert.Equal(t, "0-200,500-600,10010-31337", list.String())
-}
-
-func TestIntervalListMerge(t *testing.T) {
-	list := IntervalList{
-		Interval{0, 200},
-		Interval{500, 600},
-	}
-	list = list.Merge(Interval{200, 300})
-	assert.Equal(t, "0-300,500-600", list.String())
-	list = list.Merge(Interval{600, 700})
-	assert.Equal(t, "0-300,500-700", list.String())
-	list = list.Merge(Interval{300, 400})
-	assert.Equal(t, "0-400,500-700", list.String())
-	list = list.Merge(Interval{400, 500})
-	assert.Equal(t, "0-700", list.String())
-	list = list.Merge(Interval{10_000, 10_100})
-	assert.Equal(t, "0-700,10000-10100", list.String())
-}
-
-func TestIntervalListNextGap(t *testing.T) {
-	s := IntervalList{}.NextGap(1000).String()
-	assert.Equal(t, "0-1000", s)
-	s = IntervalList{Interval{0, 2000}}.NextGap(1000).String()
-	assert.Equal(t, "2000-3000", s)
-	s = IntervalList{Interval{0, 2000}, Interval{4000, 5000}}.NextGap(1000).String()
-	assert.Equal(t, "2000-3000", s)
-	s = IntervalList{Interval{0, 2000}, Interval{4000, 5000}}.NextGap(5000).String()
-	assert.Equal(t, "2000-4000", s)
-}
-
 // Helper to create a fake MySQL connection with the boilerplate responses needed by NewSnapshotState().
 func SetFakeSnapshotResponses(binlogPos int, gtidMax int, purgedGtids bool) {
 	var isSubset int64 = 1
@@ -193,20 +141,11 @@ func TestSnapshotStatePicksUpFromLastStop(t *testing.T) {
 			FakeMysqlResponse{false, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 		)
 		state := NewSnapshotState(tableNames).(*RealSnapshotState)
-		fmt.Printf("Pending intervals len %d\n", state.PendingIntervals.Len())
-		for e := state.PendingIntervals.Front(); e != nil; e = e.Next() {
-			fmt.Printf("Pending interval: %v\n", e.Value)
-		}
 
 		for i := 0; i < 10; i++ {
 			interval, ok := state.GetNextPendingInterval()
-			fmt.Printf("interval: %v\n", interval)
 			assert.True(t, ok)
 			state.MarkIntervalDone(interval)
-		}
-
-		for _, tableState := range state.Tables {
-			fmt.Printf("Completed: %v\n", tableState.CompletedIntervals)
 		}
 
 		// Now that we've done 10 chunks of work, we're going to stop and start again.

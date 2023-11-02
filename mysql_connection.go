@@ -148,6 +148,14 @@ func ListTables() ([]string, error) {
 			return nil, fmt.Errorf("Can't retrieve table name from SHOW TABLES: %s", err)
 		}
 	}
+
+	for i := 0; i < len(tables); i++ {
+		if StringInList(tables[i], config.ExcludeTables) {
+			tables = DeleteFromSlice(tables, i)
+			i--
+		}
+	}
+
 	return tables, nil
 }
 

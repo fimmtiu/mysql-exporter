@@ -66,6 +66,23 @@ func TestListTables(t *testing.T) {
 	assert.Equal(t, []string{"honk", "bonk"}, tables)
 }
 
+func TestListTablesExcludesTables(t *testing.T) {
+	SetFakeResponses(
+		FakeMysqlResponse{  // SHOW TABLES
+			false,
+			[]string{"Tables_in_honk"},
+			[][]any{{"foo"}, {"honk"}, {"bonk"}},
+		},
+	)
+
+	WithConfig("EXCLUDE_TABLES", "honk", func() {
+		tables, err := ListTables()
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"foo", "bonk"}, tables)
+	})
+}
+
+
 func TestGetTableSchema(t *testing.T) {
 	SetFakeResponses(
 		FakeMysqlResponse{  // SHOW CREATE TABLE

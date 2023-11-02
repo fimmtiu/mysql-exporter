@@ -13,22 +13,28 @@ type Snapshotter struct {
 	Workers *WorkerGroup
 	PendingIntervalsChan chan PendingInterval
 	CompletedIntervalsChan chan PendingInterval
+	ExitChan chan struct{}
 }
 
 func NewSnapshotter() *Snapshotter {
-	tables := getTableList()
+	tables, err := ListTables()
+	if err != nil {
+		panic(err)
+	}
 
 	return &Snapshotter{
 		NewSnapshotState(tables),
 		NewWorkerGroup(),
 		make(chan PendingInterval),
 		make(chan PendingInterval),
+		make(chan struct{}),
 	}
 }
 
-func (s *Snapshotter) Run() {
+// Returns true if we should keep going and false if we should exit.
+func (s *Snapshotter) Run() bool {
 	if s.State.Done() {
-		return
+		return true
 	}
 
 	for i := 0; i < int(config.SnapshotWorkers); i++ {
@@ -41,31 +47,36 @@ func (s *Snapshotter) Run() {
 		panic(fmt.Errorf("No pending intervals at the start of the snapshot?"))
 	}
 
-	for {
+	pendingChan := s.PendingIntervalsChan
+	loop: for {
 		select {
-		case s.PendingIntervalsChan <- nextInterval:
+		case pendingChan <- nextInterval:
 			nextInterval, ok = s.State.GetNextPendingInterval()
 			if !ok {
 				close(s.PendingIntervalsChan)
-				s.PendingIntervalsChan = nil
+				pendingChan = nil
 			}
 		case completedInterval := <- s.CompletedIntervalsChan:
 			err := s.State.MarkIntervalDone(completedInterval)
 			if err != nil {
 				panic(err)
 			}
+		case <-s.ExitChan:
+			logger.Printf("Signalling all workers to exit.")
+			s.Workers.Exit(nil)
+			s.Workers.Wait()
+			break loop
 		case <-s.Workers.DoneSignal():
 			logger.Printf("The snapshot is complete.")
 			s.Workers.Wait()
-			return
+			return true
 		}
 	}
+	return false
 }
 
 func (s *Snapshotter) Exit() {
-	logger.Printf("Signalling all workers to exit.")
-	s.Workers.Exit(nil)
-	s.Workers.Wait()
+	close(s.ExitChan)
 }
 
 func (s *Snapshotter) runWorker() error {
@@ -90,21 +101,6 @@ func (s *Snapshotter) runWorker() error {
 			return nil
 		}
 	}
-}
-
-func getTableList() []string {
-	tables, err := ListTables()
-	if err != nil {
-		panic(err)
-	}
-
-	for i := 0; i < len(tables); i++ {
-		if StringInList(tables[i], config.ExcludeTables) {
-			tables = DeleteFromSlice(tables, i)
-			i--
-		}
-	}
-	return tables
 }
 
 func getRowChunk(pi PendingInterval) (IMysqlResult, error) {

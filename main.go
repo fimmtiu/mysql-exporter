@@ -51,11 +51,11 @@ func main() {
 
 	listenForSignals()
 
-	// FIXME: Do stuff
 	snapshotter = NewSnapshotter()
-	snapshotter.Run()
-	snapshotter = nil
-
+	if snapshotter.Run() {
+		snapshotter = nil
+		// FIXME: Start binlog replay
+	}
 
 	logger.Print("Exited.")
 }
@@ -83,4 +83,5 @@ func gracefulShutdown() {
 	if snapshotter != nil {
 		snapshotter.Exit()
 	}
+	// FIXME: Stop binlog replay
 }

@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
+	"math/rand"
 	"os"
 )
 
@@ -111,4 +114,53 @@ func (pool *FakeMysqlPool) GetConn(ctx context.Context) (IMysqlClient, error) {
 
 func (pool *FakeMysqlPool) PutConn(conn IMysqlClient) {
 	// No-op.
+}
+
+type FakeSnapshotStateTable struct {
+	Name string
+	PendingIntervals IntervalList
+	CompletedIntervals IntervalList
+}
+
+type FakeSnapshotState struct {
+	FinalInterval Interval
+	Tables []*FakeSnapshotStateTable
+}
+
+func NewFakeSnapshotState(tableNames []string, rowsPerTable int) SnapshotState {
+	numberOfChunks := int(math.Ceil(float64(rowsPerTable) / float64(config.SnapshotChunkSize)))
+	state := FakeSnapshotState{FinalInterval: Interval{0, uint64(numberOfChunks) * config.SnapshotChunkSize}}
+	for _, tableName := range tableNames {
+		table := FakeSnapshotStateTable{tableName, IntervalList{}, IntervalList{}}
+		for i := 0; i < numberOfChunks; i++ {
+			table.PendingIntervals = append(table.PendingIntervals, Interval{uint64(i) * config.SnapshotChunkSize, uint64(i + 1) * config.SnapshotChunkSize})
+		}
+		state.Tables = append(state.Tables, &table)
+	}
+	return &state
+}
+
+func (state *FakeSnapshotState) GetNextPendingInterval() (PendingInterval, bool) {
+	table := state.Tables[rand.Intn(len(state.Tables))]
+	interval := table.PendingIntervals[0]
+	table.PendingIntervals = table.PendingIntervals[1:]
+	return PendingInterval{table.Name, interval}, true
+}
+
+func (state *FakeSnapshotState) MarkIntervalDone(pendingInterval PendingInterval) error {
+	for i, table := range state.Tables {
+		if table.Name == pendingInterval.TableName {
+			table.PendingIntervals = table.PendingIntervals.Subtract(pendingInterval.Interval)
+			table.CompletedIntervals = table.CompletedIntervals.Merge(pendingInterval.Interval)
+			if len(table.CompletedIntervals) == 1 && table.CompletedIntervals[0] == state.FinalInterval {
+				state.Tables = DeleteFromSlice(state.Tables, i)
+			}
+			return nil
+		}
+	}
+	panic(fmt.Errorf("No such table: %s", pendingInterval.TableName))
+}
+
+func (state *FakeSnapshotState) Done() bool {
+	return len(state.Tables) == 0
 }
