@@ -7,6 +7,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func FakeTableSchemas() []*TableSchema {
+	tableNames := []string{"foo", "bar", "baz", "quux", "honk", "bonk"}
+	schemas := []*TableSchema{}
+	for _, tableName := range tableNames {
+		schema := &TableSchema{tableName, []Column{{"id", "bigint", 20, 0, false, false}}, nil}
+		schemas = append(schemas, schema)
+	}
+	return schemas
+}
+
 // Helper to create a fake MySQL connection with the boilerplate responses needed by NewSnapshotState().
 func SetFakeSnapshotResponses(binlogPos int, gtidMax int, purgedGtids bool) {
 	var isSubset int64 = 1
@@ -60,7 +70,7 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 	stateStorage.ClearAll()
 	WithConfig("SNAPSHOT_CHUNK_SIZE", "100", func() {
 		workerGroup := NewWorkerGroup()
-		tableNames := []string{"foo", "bar", "baz", "quux", "honk", "bonk"}
+		tables := FakeTableSchemas()
 		SetFakeSnapshotResponses(31337, 35000, false)
 		AddFakeResponses(
 			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
@@ -70,9 +80,9 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
 			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(10_006)}}},
 		)
-		state := NewSnapshotState(tableNames).(*RealSnapshotState)
-		for _, tableName := range tableNames {
-			tableState := state.Tables[tableName]
+		state := NewSnapshotState(tables).(*RealSnapshotState)
+		for _, table := range tables {
+			tableState := state.Tables[table.Name]
 			assert.Equal(t, IntervalList{}, tableState.CompletedIntervals)
 			assert.Equal(t, IntervalList{Interval{0, 100}}, tableState.BusyIntervals)
 			assert.Equal(t, uint64(10_006), tableState.MaxId)
@@ -85,7 +95,7 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 		outputChan := make(chan PendingInterval)
 
 		// Three workers per table should ensure that they come into conflict.
-		for i := 0; i < len(tableNames) * 3; i++ {
+		for i := 0; i < len(tables) * 3; i++ {
 			workerGroup.Go(func() error {
 				for {
 					if inputChan == nil {
@@ -129,7 +139,7 @@ func TestSnapshotStateConcurrent(t *testing.T) {
 func TestSnapshotStatePicksUpFromLastStop(t *testing.T) {
 	stateStorage.ClearAll()
 	WithConfig("SNAPSHOT_CHUNK_SIZE", "100", func() {
-		tableNames := []string{"foo", "bar", "baz", "quux", "honk", "bonk"}
+		tables := FakeTableSchemas()
 		SetFakeSnapshotResponses(31337, 35000, false)
 		AddFakeResponses(
 			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
@@ -139,7 +149,7 @@ func TestSnapshotStatePicksUpFromLastStop(t *testing.T) {
 			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 		)
-		state := NewSnapshotState(tableNames).(*RealSnapshotState)
+		state := NewSnapshotState(tables).(*RealSnapshotState)
 
 		for i := 0; i < 10; i++ {
 			interval, ok := state.GetNextPendingInterval()
@@ -159,7 +169,7 @@ func TestSnapshotStatePicksUpFromLastStop(t *testing.T) {
 			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 			FakeMysqlResponse{false, 0, []string{"MAX(id)"}, [][]any{{int64(999)}}},
 		)
-		state = NewSnapshotState(tableNames).(*RealSnapshotState)
+		state = NewSnapshotState(tables).(*RealSnapshotState)
 
 		count := 0
 		for !state.Done() {

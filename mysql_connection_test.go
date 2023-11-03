@@ -92,6 +92,7 @@ func TestGetTableSchema(t *testing.T) {
 		},
 	)
 	schema, err := GetTableSchema("email_addresses")
+	schema, err = GetTableSchema("email_addresses")  // only consumes one response even if we call it more than once
 	assert.NoError(t, err)
 	assert.Equal(t, "email_addresses", schema.Name)
 	assert.Equal(t, "id", schema.Columns[0].Name)

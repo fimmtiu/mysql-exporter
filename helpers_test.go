@@ -141,7 +141,7 @@ func TestPoolExecute(t *testing.T) {
 }
 
 type FakeSnapshotStateTable struct {
-	Name string
+	Schema *TableSchema
 	PendingIntervals IntervalList
 	CompletedIntervals IntervalList
 }
@@ -155,7 +155,8 @@ func NewFakeSnapshotState(tableNames []string, rowsPerTable int) SnapshotState {
 	numberOfChunks := int(math.Ceil(float64(rowsPerTable) / float64(config.SnapshotChunkSize)))
 	state := FakeSnapshotState{FinalInterval: Interval{0, uint64(numberOfChunks) * config.SnapshotChunkSize}}
 	for _, tableName := range tableNames {
-		table := FakeSnapshotStateTable{tableName, IntervalList{}, IntervalList{}}
+		schema := &TableSchema{tableName, []Column{{"id", "bigint", 20, 0, false, false}}, nil}
+		table := FakeSnapshotStateTable{schema, IntervalList{}, IntervalList{}}
 		for i := 0; i < numberOfChunks; i++ {
 			table.PendingIntervals = append(table.PendingIntervals, Interval{uint64(i) * config.SnapshotChunkSize, uint64(i + 1) * config.SnapshotChunkSize})
 		}
@@ -171,13 +172,13 @@ func (state *FakeSnapshotState) GetNextPendingInterval() (PendingInterval, bool)
 	} else {
 		interval := table.PendingIntervals[0]
 		table.PendingIntervals = table.PendingIntervals[1:]
-		return PendingInterval{table.Name, interval}, true
+		return PendingInterval{table.Schema, interval}, true
 	}
 }
 
 func (state *FakeSnapshotState) MarkIntervalDone(pendingInterval PendingInterval) error {
 	for i, table := range state.Tables {
-		if table.Name == pendingInterval.TableName {
+		if table.Schema.Name == pendingInterval.Schema.Name {
 			table.PendingIntervals = table.PendingIntervals.Subtract(pendingInterval.Interval)
 			table.CompletedIntervals = table.CompletedIntervals.Merge(pendingInterval.Interval)
 			if len(table.CompletedIntervals) == 1 && table.CompletedIntervals[0] == state.FinalInterval {
@@ -186,7 +187,7 @@ func (state *FakeSnapshotState) MarkIntervalDone(pendingInterval PendingInterval
 			return nil
 		}
 	}
-	panic(fmt.Errorf("No such table: %s", pendingInterval.TableName))
+	panic(fmt.Errorf("No such table: %s", pendingInterval.Schema.Name))
 }
 
 func (state *FakeSnapshotState) Done() bool {

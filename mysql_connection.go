@@ -159,7 +159,9 @@ func ListTables() ([]string, error) {
 	return tables, nil
 }
 
-func GetTableSchema(tableName string) (*TableSchema, error) {
+var tableSchemaCache map[string]*TableSchema = make(map[string]*TableSchema)
+
+func RefreshTableSchema(tableName string) (*TableSchema, error) {
 	rows, err := pool.Execute("SHOW CREATE TABLE `" + tableName + "`")
 	if err != nil {
 		return nil, fmt.Errorf("Can't execute SHOW CREATE TABLE: %s", err)
@@ -169,5 +171,16 @@ func GetTableSchema(tableName string) (*TableSchema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Can't fetch CREATE TABLE column: %s", err)
 	}
-	return ParseSchema(createTable), nil
+	schema := ParseSchema(createTable)
+	tableSchemaCache[tableName] = schema
+	return schema, nil
+}
+
+func GetTableSchema(tableName string) (*TableSchema, error) {
+	var err error
+	schema, ok := tableSchemaCache[tableName]
+	if !ok {
+		schema, err = RefreshTableSchema(tableName)
+	}
+	return schema, err
 }

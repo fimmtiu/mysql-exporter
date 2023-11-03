@@ -6,14 +6,14 @@ import (
 )
 
 type SnapshotTableState struct {
-	TableName string
+	Schema *TableSchema
 	CompletedIntervals IntervalList
 	BusyIntervals IntervalList
 	MaxId uint64
 }
 
 type PendingInterval struct {
-	TableName string
+	Schema *TableSchema
 	Interval Interval
 }
 
@@ -23,30 +23,31 @@ type SnapshotState interface {
 	Done() bool
 }
 
+// As opposed to the FakeSnapshotState that we use in some of the tests.
 type RealSnapshotState struct {
 	Tables map[string]*SnapshotTableState
 	PendingIntervals *list.List
 }
 
-func NewSnapshotState(tableNames []string) SnapshotState {
+func NewSnapshotState(tables []*TableSchema) SnapshotState {
 	var err error
 	state := RealSnapshotState{
-		make(map[string]*SnapshotTableState, len(tableNames)),
+		make(map[string]*SnapshotTableState, len(tables)),
 		list.New(),
 	}
 	needsSnapshot := needsSnapshot()
 
 	// Populate the list of tables which haven't yet been completely snapshotted.
 	// (If needsSnapshot is true, that's all of them.)
-	for _, tableName := range tableNames {
+	for _, table := range tables {
 		progress := ""
 		if needsSnapshot {
-			err := stateStorage.Delete("table_snapshot_progress/" + tableName)
+			err := stateStorage.Delete("table_snapshot_progress/" + table.Name)
 			if err != nil {
 				panic(err)
 			}
 		} else {
-			progress, err = stateStorage.Get("table_snapshot_progress/" + tableName)
+			progress, err = stateStorage.Get("table_snapshot_progress/" + table.Name)
 			if err != nil {
 				panic(err)
 			}
@@ -54,12 +55,12 @@ func NewSnapshotState(tableNames []string) SnapshotState {
 
 		if progress != "done" {
 			tableState := SnapshotTableState{
-				tableName,
+				table,
 				ParseIntervalList(progress),
 				ParseIntervalList(progress),
-				getHighestTableId(tableName),
+				getHighestTableId(table.Name),
 			}
-			state.Tables[tableName] = &tableState
+			state.Tables[table.Name] = &tableState
 		}
 	}
 
@@ -83,27 +84,24 @@ func (state *RealSnapshotState) GetNextPendingInterval() (PendingInterval, bool)
 	if state.PendingIntervals.Front() == nil {
 		return PendingInterval{}, false
 	}
-
 	nextInterval := state.PendingIntervals.Remove(state.PendingIntervals.Front()).(PendingInterval)
-	tableState := state.Tables[nextInterval.TableName]
+	tableState := state.Tables[nextInterval.Schema.Name]
 	state.addNextPendingInterval(tableState)
-	// fmt.Printf("GetNextPendingInterval(): %v\n", nextInterval)
 	return nextInterval, true
 }
 
 // Mark a chunk of work as done. If this is the last chunk of work for this table,
 // mark the entire table as done.
 func (state *RealSnapshotState) MarkIntervalDone(pendingInterval PendingInterval) error {
-	tableState := state.Tables[pendingInterval.TableName]
+	tableState := state.Tables[pendingInterval.Schema.Name]
 	if tableState.CompletedIntervals.Includes(pendingInterval.Interval) {
-		panic(fmt.Errorf("Interval %v already completed for table %s (%v)", pendingInterval.Interval, tableState.TableName, tableState.CompletedIntervals))
+		panic(fmt.Errorf("Interval %v already completed for table %s (%v)", pendingInterval.Interval, tableState.Schema.Name, tableState.CompletedIntervals))
 	}
 	tableState.CompletedIntervals = tableState.CompletedIntervals.Merge(pendingInterval.Interval)
-	// fmt.Printf("MarkIntervalDone(): %v (completed %v)\n", pendingInterval, tableState.CompletedIntervals)
 	if tableState.CompletedIntervals.HighestContiguous() > tableState.MaxId {
-		return state.markTableDone(tableState.TableName)
+		return state.markTableDone(tableState.Schema.Name)
 	}
-	return stateStorage.Set("table_snapshot_progress/" + tableState.TableName, tableState.CompletedIntervals.String())
+	return stateStorage.Set("table_snapshot_progress/" + tableState.Schema.Name, tableState.CompletedIntervals.String())
 }
 
 // Returns true if all tables have been fully snapshotted.
@@ -121,7 +119,7 @@ func (state *RealSnapshotState) addNextPendingInterval(table *SnapshotTableState
 			gap.End = table.MaxId + 1
 		}
 		table.BusyIntervals = table.BusyIntervals.Merge(gap)
-		state.PendingIntervals.PushBack(PendingInterval{table.TableName, gap})
+		state.PendingIntervals.PushBack(PendingInterval{table.Schema, gap})
 	}
 }
 

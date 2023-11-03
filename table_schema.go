@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"math/big"
+	"reflect"
 	"strings"
-
-	"github.com/go-mysql-org/go-mysql/mysql"
+	"time"
 )
 
 type Column struct {
@@ -19,16 +20,17 @@ type Column struct {
 type TableSchema struct {
 	Name string
 	Columns []Column
-
-	// goType reflect.Type
-	// parquetSchema *parquet.Schema
+	goType reflect.Type
 }
 
 func NewTableSchema(name string) TableSchema {
-	return TableSchema{name, make([]Column, 0)}
+	return TableSchema{name, make([]Column, 0), nil}
 }
 
 func (ts *TableSchema) AddColumn(col Column) {
+	if ts.goType != nil {
+		panic(fmt.Errorf("Can't add column '%s' to '%s' after we've already generated the Go type!", col.Name, ts.Name))
+	}
 	ts.Columns = append(ts.Columns, col)
 }
 
@@ -87,30 +89,93 @@ func NewColumn(name, sqlType string, width, scale int, signed, nullable bool) Co
 	return column
 }
 
-func (c Column) MysqlLibraryType() uint8 {
+func (c Column) ConvertToGoColumn() reflect.StructField {
+	// The name has to be capitalized to make Go consider the field public.
+	field := reflect.StructField{Name: UpperFirst(c.Name)}
+
 	switch c.SqlType {
-	case "tinyint": return mysql.MYSQL_TYPE_TINY
-	case "smallint": return mysql.MYSQL_TYPE_SHORT
-	case "mediumint": return mysql.MYSQL_TYPE_INT24
-	case "int": return mysql.MYSQL_TYPE_LONG
-	case "bigint": return mysql.MYSQL_TYPE_LONGLONG
-	case "float": return mysql.MYSQL_TYPE_FLOAT
-	case "double": return mysql.MYSQL_TYPE_DOUBLE
-	case "decimal": return mysql.MYSQL_TYPE_NEWDECIMAL
-	case "char": return mysql.MYSQL_TYPE_STRING
-	case "varchar": return mysql.MYSQL_TYPE_VAR_STRING
-	case "text": return mysql.MYSQL_TYPE_STRING
-	case "mediumtext": return mysql.MYSQL_TYPE_STRING
-	case "longtext": return mysql.MYSQL_TYPE_STRING
-	case "binary": return mysql.MYSQL_TYPE_STRING
-	case "varbinary": return mysql.MYSQL_TYPE_VAR_STRING
-	case "tinyblob": return mysql.MYSQL_TYPE_BLOB
-	case "blob": return mysql.MYSQL_TYPE_BLOB
-	case "mediumblob": return mysql.MYSQL_TYPE_BLOB
-	case "longblob": return mysql.MYSQL_TYPE_BLOB
-	case "date": return mysql.MYSQL_TYPE_DATE
-	case "datetime": return mysql.MYSQL_TYPE_DATETIME
-	case "timestamp": return mysql.MYSQL_TYPE_TIMESTAMP
-	default: panic(fmt.Errorf("Unknown SQL type for '%s': %s", c.Name, c.SqlType))
+	case "tinyint":
+		if c.Width == 1 {
+			field.Type = reflect.TypeOf(false)
+		} else {
+			if c.Signed {
+				field.Type = reflect.TypeOf(int8(0))
+			} else {
+				field.Type = reflect.TypeOf(uint8(0))
+			}
+		}
+	case "int", "smallint", "mediumint":
+		if c.Signed {
+			field.Type = reflect.TypeOf(int32(0))
+		} else {
+			field.Type = reflect.TypeOf(uint32(0))
+		}
+	case "bigint":
+		if c.Signed {
+			field.Type = reflect.TypeOf(int64(0))
+		} else {
+			field.Type = reflect.TypeOf(uint64(0))
+		}
+
+	case "decimal":
+		field.Type = reflect.TypeOf(big.Int{})
+
+	// Floating-point numbers
+	case "float":
+		field.Type = reflect.TypeOf(float32(0))
+	case "double":
+		field.Type = reflect.TypeOf(float64(0))
+
+	// Strings
+	case "char", "varchar", "text", "mediumtext", "longtext":
+		field.Type = reflect.TypeOf("")
+
+	// Binary data
+	case "binary":
+		field.Type = reflect.ArrayOf(c.Width, reflect.TypeOf(byte(0)))
+	case "varbinary", "tinyblob", "blob", "mediumblob", "longblob":
+		field.Type = reflect.TypeOf([]byte{})
+
+	// Times and dates.
+	case "date":
+		field.Type = reflect.TypeOf(int32(0))
+	case "datetime", "timestamp":
+		field.Type = reflect.TypeOf(time.Time{})
+
+	default: panic(fmt.Errorf("Unsupported SQL type for '%s': %s", c.Name, c.SqlType))
 	}
+	return field
+}
+
+func (ts *TableSchema) GoType() reflect.Type {
+	if ts.goType == nil {
+		columns := []reflect.StructField{}
+		schemaField := reflect.StructField{Name: "_tableSchema", Type: reflect.TypeOf(ts), PkgPath: "github.com/clio/mysql-exporter/anonymoustype"}
+		nullField := reflect.StructField{Name: "_nullColumns", Type: reflect.TypeOf([]uint8{}), PkgPath: "github.com/clio/mysql-exporter/anonymoustype"}
+		columns = append(columns, schemaField, nullField)
+		for _, col := range ts.Columns {
+			columns = append(columns, col.ConvertToGoColumn())
+		}
+		ts.goType = reflect.StructOf(columns)
+	}
+	return ts.goType
+}
+
+func (ts *TableSchema) NullColumnsLength() int {
+	if len(ts.Columns) < 8 {
+		return 1
+	} else if len(ts.Columns) % 8 == 0 {
+		return (len(ts.Columns) - 2) / 8
+	} else {
+		return (len(ts.Columns) - 2) / 8 + 1
+	}
+}
+
+func GoRowSchema(gorow any) *TableSchema {
+	return reflect.ValueOf(gorow).Field(1).Interface().(*TableSchema)
+}
+
+func GoRowColumnIsNull(gorow any, index int) bool {
+	bitfield := reflect.ValueOf(gorow).Field(1).Interface().([]uint8)
+	return bitfield[index / 8] & (1 << (index % 8)) != 0
 }

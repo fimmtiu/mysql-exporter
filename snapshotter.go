@@ -21,7 +21,17 @@ func NewSnapshotter() *Snapshotter {
 	if err != nil {
 		panic(err)
 	}
-	return NewCustomSnapshotter(NewSnapshotState(tables))
+
+	schemas := []*TableSchema{}
+	for _, tableName := range tables {
+		schema, err := GetTableSchema(tableName)
+		if err != nil {
+			panic(err)
+		}
+		schemas = append(schemas, schema)
+	}
+
+	return NewCustomSnapshotter(NewSnapshotState(schemas))
 }
 
 func NewCustomSnapshotter(state SnapshotState) *Snapshotter {
@@ -95,9 +105,8 @@ func (s *Snapshotter) runWorker() error {
 			if err != nil {
 				panic(err)
 			}
-			fmt.Printf("Row number: %d\n", result.RowNumber())
 			for row := 0; row < result.RowNumber(); row++ {
-
+				// FIXME WRITE THE THING
 			}
 
 			s.CompletedIntervalsChan <- pi
@@ -114,9 +123,8 @@ func getRowChunk(pi PendingInterval) (IMysqlResult, error) {
 	var err error
 
 	for retries < MAX_RETRIES {
-		sql := fmt.Sprintf("SELECT * FROM `%s` WHERE `id` >= %d AND `id` < %d", pi.TableName, pi.Interval.Start, pi.Interval.End)
+		sql := fmt.Sprintf("SELECT * FROM `%s` WHERE `id` >= %d AND `id` < %d", pi.Schema.Name, pi.Interval.Start, pi.Interval.End)
 		result, err = pool.Execute(sql)
-		fmt.Printf("Result %v, err %v\n", result, err)
 		if err == nil {
 			return result, nil
 		} else {
