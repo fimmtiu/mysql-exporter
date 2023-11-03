@@ -2,10 +2,7 @@ package main
 
 import (
 	"fmt"
-	"math/big"
-	"reflect"
 	"strings"
-	"time"
 )
 
 type Column struct {
@@ -20,17 +17,13 @@ type Column struct {
 type TableSchema struct {
 	Name string
 	Columns []Column
-	goType reflect.Type
 }
 
 func NewTableSchema(name string) TableSchema {
-	return TableSchema{name, make([]Column, 0), nil}
+	return TableSchema{name, make([]Column, 0)}
 }
 
 func (ts *TableSchema) AddColumn(col Column) {
-	if ts.goType != nil {
-		panic(fmt.Errorf("Can't add column '%s' to '%s' after we've already generated the Go type!", col.Name, ts.Name))
-	}
 	ts.Columns = append(ts.Columns, col)
 }
 
@@ -89,97 +82,60 @@ func NewColumn(name, sqlType string, width, scale int, signed, nullable bool) Co
 	return column
 }
 
-func (c Column) ConvertToGoColumn() reflect.StructField {
-	// The name has to be capitalized to make Go consider the field public.
-	field := reflect.StructField{Name: UpperFirst(c.Name)}
+// func (c Column) ConvertToGoColumn() reflect.StructField {
+// 	// The name has to be capitalized to make Go consider the field public.
+// 	field := reflect.StructField{Name: UpperFirst(c.Name)}
 
-	switch c.SqlType {
-	case "tinyint":
-		if c.Width == 1 {
-			field.Type = reflect.TypeOf(false)
-		} else {
-			if c.Signed {
-				field.Type = reflect.TypeOf(int8(0))
-			} else {
-				field.Type = reflect.TypeOf(uint8(0))
-			}
-		}
-	case "int", "smallint", "mediumint":
-		if c.Signed {
-			field.Type = reflect.TypeOf(int32(0))
-		} else {
-			field.Type = reflect.TypeOf(uint32(0))
-		}
-	case "bigint":
-		if c.Signed {
-			field.Type = reflect.TypeOf(int64(0))
-		} else {
-			field.Type = reflect.TypeOf(uint64(0))
-		}
+// 	switch c.SqlType {
+// 	case "tinyint":
+// 		if c.Width == 1 {
+// 			field.Type = reflect.TypeOf(false)
+// 		} else {
+// 			if c.Signed {
+// 				field.Type = reflect.TypeOf(int8(0))
+// 			} else {
+// 				field.Type = reflect.TypeOf(uint8(0))
+// 			}
+// 		}
+// 	case "int", "smallint", "mediumint":
+// 		if c.Signed {
+// 			field.Type = reflect.TypeOf(int32(0))
+// 		} else {
+// 			field.Type = reflect.TypeOf(uint32(0))
+// 		}
+// 	case "bigint":
+// 		if c.Signed {
+// 			field.Type = reflect.TypeOf(int64(0))
+// 		} else {
+// 			field.Type = reflect.TypeOf(uint64(0))
+// 		}
 
-	case "decimal":
-		field.Type = reflect.TypeOf(big.Int{})
+// 	case "decimal":
+// 		field.Type = reflect.TypeOf(big.Int{})
 
-	// Floating-point numbers
-	case "float":
-		field.Type = reflect.TypeOf(float32(0))
-	case "double":
-		field.Type = reflect.TypeOf(float64(0))
+// 	// Floating-point numbers
+// 	case "float":
+// 		field.Type = reflect.TypeOf(float32(0))
+// 	case "double":
+// 		field.Type = reflect.TypeOf(float64(0))
 
-	// Strings
-	case "char", "varchar", "text", "mediumtext", "longtext":
-		field.Type = reflect.TypeOf("")
+// 	// Strings
+// 	case "char", "varchar", "text", "mediumtext", "longtext":
+// 		field.Type = reflect.TypeOf("")
 
-	// Binary data
-	case "binary":
-		field.Type = reflect.ArrayOf(c.Width, reflect.TypeOf(byte(0)))
-	case "varbinary", "tinyblob", "blob", "mediumblob", "longblob":
-		field.Type = reflect.TypeOf([]byte{})
+// 	// Binary data
+// 	case "binary":
+// 		field.Type = reflect.ArrayOf(c.Width, reflect.TypeOf(byte(0)))
+// 	case "varbinary", "tinyblob", "blob", "mediumblob", "longblob":
+// 		field.Type = reflect.TypeOf([]byte{})
 
-	// Times and dates.
-	case "date":
-		field.Type = reflect.TypeOf(int32(0))
-	case "datetime", "timestamp":
-		field.Type = reflect.TypeOf(time.Time{})
+// 	// Times and dates.
+// 	case "date":
+// 		field.Type = reflect.TypeOf(int32(0))
+// 	case "datetime", "timestamp":
+// 		field.Type = reflect.TypeOf(time.Time{})
 
-	default: panic(fmt.Errorf("Unsupported SQL type for '%s': %s", c.Name, c.SqlType))
-	}
-	return field
-}
-
-func (ts *TableSchema) GoType() reflect.Type {
-	if ts.goType == nil {
-		columns := []reflect.StructField{}
-		schemaField := reflect.StructField{Name: "_tableSchema", Type: reflect.TypeOf(ts), PkgPath: "github.com/clio/mysql-exporter/anonymoustype"}
-		nullField := reflect.StructField{Name: "_nullColumns", Type: reflect.TypeOf([]uint8{}), PkgPath: "github.com/clio/mysql-exporter/anonymoustype"}
-		columns = append(columns, schemaField, nullField)
-		for _, col := range ts.Columns {
-			columns = append(columns, col.ConvertToGoColumn())
-		}
-		ts.goType = reflect.StructOf(columns)
-	}
-	return ts.goType
-}
-
-func (ts *TableSchema) NullColumnsLength() int {
-	if len(ts.Columns) < 8 {
-		return 1
-	} else if len(ts.Columns) % 8 == 0 {
-		return (len(ts.Columns) - 2) / 8
-	} else {
-		return (len(ts.Columns) - 2) / 8 + 1
-	}
-}
-
-func GoRowSchema(gorow any) *TableSchema {
-	return reflect.ValueOf(gorow).Field(1).Interface().(*TableSchema)
-}
-
-func GoRowColumnIsNull(gorow any, index int) bool {
-	bitfield := reflect.ValueOf(gorow).Field(1).Interface().([]uint8)
-	return bitfield[index / 8] & (1 << (index % 8)) != 0
-}
-
-func GoRowColumnValue(gorow any, index int) any {
-	return reflect.ValueOf(gorow).Field(index + 2).Interface()
-}
+// 	default: panic(fmt.Errorf("Unsupported SQL type for '%s': %s", c.Name, c.SqlType))
+// 	}
+// 	return field
+// }

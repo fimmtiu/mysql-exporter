@@ -155,7 +155,7 @@ func NewFakeSnapshotState(tableNames []string, rowsPerTable int) SnapshotState {
 	numberOfChunks := int(math.Ceil(float64(rowsPerTable) / float64(config.SnapshotChunkSize)))
 	state := FakeSnapshotState{FinalInterval: Interval{0, uint64(numberOfChunks) * config.SnapshotChunkSize}}
 	for _, tableName := range tableNames {
-		schema := &TableSchema{tableName, []Column{{"id", "bigint", 20, 0, false, false}}, nil}
+		schema := &TableSchema{tableName, []Column{{"id", "bigint", 20, 0, false, false}}}
 		table := FakeSnapshotStateTable{schema, IntervalList{}, IntervalList{}}
 		for i := 0; i < numberOfChunks; i++ {
 			table.PendingIntervals = append(table.PendingIntervals, Interval{uint64(i) * config.SnapshotChunkSize, uint64(i + 1) * config.SnapshotChunkSize})

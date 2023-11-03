@@ -11,7 +11,7 @@ func FakeTableSchemas() []*TableSchema {
 	tableNames := []string{"foo", "bar", "baz", "quux", "honk", "bonk"}
 	schemas := []*TableSchema{}
 	for _, tableName := range tableNames {
-		schema := &TableSchema{tableName, []Column{{"id", "bigint", 20, 0, false, false}}, nil}
+		schema := &TableSchema{tableName, []Column{{"id", "bigint", 20, 0, false, false}}}
 		schemas = append(schemas, schema)
 	}
 	return schemas

@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -13,7 +14,7 @@ import (
 type RowsEvent struct {
 	ResponseChan chan error
 	Schema *TableSchema
-	Data []any   // Instances of Schema.goType, which isn't defined at compile time.
+	Data [][]any
 }
 
 type Sink interface {
@@ -111,8 +112,7 @@ func (writer *CsvWriter) Run() error {
 					if i > 0 {
 						line += ","
 					}
-					value := GoRowColumnValue(row, i)
-					line += formatDatumForCsv(value, column)
+					line += formatDatumForCsv(row[i], column)
 				}
 				_, err := writer.File.WriteString(line + "\n")
 				if err != nil {
@@ -139,12 +139,19 @@ func (writer *CsvWriter) Exit() error {
 	return <-writer.ExitChan
 }
 
-var quoteRegexp = regexp.MustCompile(`"`)
+var needsQuotesRegexp = regexp.MustCompile(`[,"]`)
 func formatDatumForCsv(datum any, column Column) string {
+	if datum == nil {
+		return ""
+	}
+
 	switch reflect.TypeOf(datum).Kind() {
 	case reflect.String:
-		s := quoteRegexp.ReplaceAllString(datum.(string), `""`)
-		return `"` + s + `"`
+		s := datum.(string)
+		if needsQuotesRegexp.MatchString(s) {
+			s = `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+		}
+		return s
 	case reflect.Int8:   return fmt.Sprintf("%d", datum.(int8))
 	case reflect.Uint8:  return fmt.Sprintf("%d", datum.(uint8))
 	case reflect.Int16:  return fmt.Sprintf("%d", datum.(int16))
@@ -167,6 +174,9 @@ func formatDatumForCsv(datum any, column Column) string {
 	case reflect.TypeOf(big.Int{}).Kind():
 		decimal := datum.(big.Int)
 		return fmt.Sprintf("%s", decimal.String())
+
+	case reflect.Float32, reflect.Float64:
+		return fmt.Sprintf("%f", datum)
 
 	default:
 		panic(fmt.Sprintf("Unexpected type for CSV: '%v'", reflect.TypeOf(datum)))
