@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // FIXME: Go through these later, verify that we're using all of them.
@@ -61,6 +62,18 @@ func InTestMode() bool {
 func InIntegrationTestMode() bool {
 	return InTestMode() && StringToBool(os.Getenv("INTEGRATION_TESTS"))
 }
+
+func FormatEpochDate(epochDate int32) string {
+	seconds := int64(epochDate) * 24 * 60 * 60
+	date := time.Unix(seconds, 0).In(UTC)
+	return date.Format("2006-01-02")
+}
+
+func FormatMillisecondTime(millisSinceMidnight int32) string {
+	epochTime := time.UnixMilli(int64(millisSinceMidnight)).In(UTC)
+	return epochTime.Format("15:04:05")
+}
+
 
 // FIXME: This probably belongs in some other file, maybe mysql_connection.go.
 // func DecodeFieldValue(field *mysql.Field, value mysql.FieldValue) any {

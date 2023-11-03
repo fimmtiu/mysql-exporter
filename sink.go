@@ -2,8 +2,12 @@ package main
 
 import (
 	"fmt"
+	"math/big"
 	"os"
+	"reflect"
+	"regexp"
 	"sync"
+	"time"
 )
 
 type RowsEvent struct {
@@ -99,15 +103,30 @@ func NewCsvWriter(ts *TableSchema, workerGroup *WorkerGroup) (*CsvWriter, error)
 
 func (writer *CsvWriter) Run() error {
 	for {
-		select {
+		redo: select {
 		case rows := <-writer.RowChan:
-			// FIXME: write the actual data
-			_, err := writer.File.WriteString("this is a row\n")
-			rows.ResponseChan <- err
+			for _, row := range rows.Data {
+				line := ""
+				for i, column := range writer.Schema.Columns {
+					if i > 0 {
+						line += ","
+					}
+					value := GoRowColumnValue(row, i)
+					line += formatDatumForCsv(value, column)
+				}
+				_, err := writer.File.WriteString(line + "\n")
+				if err != nil {
+					rows.ResponseChan <- err
+					break redo
+				}
+			}
+			rows.ResponseChan <- nil
+
 		case <-writer.ExitChan:
 			err := writer.File.Close()
 			writer.ExitChan <- err
 			return err
+
 		case <-writer.WorkerGroup.ExitSignal():
 			return writer.File.Close()
 		}
@@ -118,4 +137,38 @@ func (writer *CsvWriter) Run() error {
 func (writer *CsvWriter) Exit() error {
 	writer.ExitChan <- nil
 	return <-writer.ExitChan
+}
+
+var quoteRegexp = regexp.MustCompile(`"`)
+func formatDatumForCsv(datum any, column Column) string {
+	switch reflect.TypeOf(datum).Kind() {
+	case reflect.String:
+		s := quoteRegexp.ReplaceAllString(datum.(string), `""`)
+		return `"` + s + `"`
+	case reflect.Int8:   return fmt.Sprintf("%d", datum.(int8))
+	case reflect.Uint8:  return fmt.Sprintf("%d", datum.(uint8))
+	case reflect.Int16:  return fmt.Sprintf("%d", datum.(int16))
+	case reflect.Uint16: return fmt.Sprintf("%d", datum.(uint16))
+	case reflect.Uint32: return fmt.Sprintf("%d", datum.(uint32))
+	case reflect.Int64:  return fmt.Sprintf("%d", datum.(int64))
+	case reflect.Uint64: return fmt.Sprintf("%d", datum.(uint64))
+
+	case reflect.Int32:
+		switch column.SqlType {
+		case "date": return `"` + FormatEpochDate(datum.(int32)) + `"`
+		case "time": return `"` + FormatMillisecondTime(datum.(int32)) + `"`
+		default: return fmt.Sprintf("%d", datum.(int32))
+		}
+
+	case reflect.TypeOf(time.Time{}).Kind():
+		t := datum.(time.Time)
+		return `"` + t.Format("2006-01-02 15:04:05") + `"`
+
+	case reflect.TypeOf(big.Int{}).Kind():
+		decimal := datum.(big.Int)
+		return fmt.Sprintf("%s", decimal.String())
+
+	default:
+		panic(fmt.Sprintf("Unexpected type for CSV: '%v'", reflect.TypeOf(datum)))
+	}
 }

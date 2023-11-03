@@ -179,3 +179,7 @@ func GoRowColumnIsNull(gorow any, index int) bool {
 	bitfield := reflect.ValueOf(gorow).Field(1).Interface().([]uint8)
 	return bitfield[index / 8] & (1 << (index % 8)) != 0
 }
+
+func GoRowColumnValue(gorow any, index int) any {
+	return reflect.ValueOf(gorow).Field(index + 2).Interface()
+}
