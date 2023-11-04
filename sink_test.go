@@ -39,23 +39,23 @@ func TestCsvSink(t *testing.T) {
 		// FIXME add decimals
 		nil, nil, nil, nil, nil, nil,
 	}}}
-	expectedNumbersRegexp := regexp.MustCompile("^tinyint_so,tinyint_sr,tinyint_uo,tinyint_ur,smallint_so,smallint_sr,smallint_uo,smallint_ur,mediumint_so,mediumint_sr,mediumint_uo,mediumint_ur,int_so,int_sr,int_uo,int_ur,bigint_so,bigint_sr,bigint_uo,bigint_ur,float_o,float_r,double_o,double_r,smalldecimal_o,smalldecimal_r,mediumdecimal_o,mediumdecimal_r,bigdecimal_o,bigdecimal_r\n" + `-1,-120,0,120,500,-500,30000,60000,-8000000,8000000,500,10000000,-2000000000,2000000000,3000000000,4000000000,-900000000000000000,900000000000000000,31337,1000000000000000000,0.10+,313.3\d+,3.133\d+,0.0+,,,,,,` + "\n$")
+	expectedNumbersRegexp := regexp.MustCompile("^tinyint_so,tinyint_sr,tinyint_uo,tinyint_ur,smallint_so,smallint_sr,smallint_uo,smallint_ur,mediumint_so,mediumint_sr,mediumint_uo,mediumint_ur,int_so,int_sr,int_uo,int_ur,bigint_so,bigint_sr,bigint_uo,bigint_ur,float_o,float_r,double_o,double_r,smalldecimal_o,smalldecimal_r,mediumdecimal_o,mediumdecimal_r,bigdecimal_o,bigdecimal_r\n" + `-1,-120,0,120,500,-500,30000,60000,-8000000,8000000,500,10000000,-2000000000,2000000000,3000000000,4000000000,-900000000000000000,900000000000000000,31337,1000000000000000000,0\.10+,313\.3\d+,3\.133\d+,0\.0+,,,,,,` + "\n$")
 
 	stringRows := RowsEvent{responseChan, schemas[2], [][]any{{
 		"woop", "bloop", `I like "pie"`, `wh"eeee`, "this has,a comma", "this,has two,commas", "honk", "bonk", "", "...", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j",
 	}}}
 	expectedStrings := "char_o,char_r,varchar_o,varchar_r,text_o,text_r,mediumtext_o,mediumtext_r,longtext_o,longtext_r,binary_o,binary_r,varbinary_o,varbinary_r,blob_o,blob_r,mediumblob_o,mediumblob_r,longblob_o,longblob_r\n" + `woop,bloop,"I like ""pie""","wh""eeee","this has,a comma","this,has two,commas",honk,bonk,,...,a,b,c,d,e,f,g,h,i,j` + "\n"
 
-	sink.WriteRow(schemas[0], dateRows)
+	sink.WriteRows(dateRows)
 	assert.NoError(t, <- responseChan)
-	sink.WriteRow(schemas[1], numberRows)
+	sink.WriteRows(numberRows)
 	assert.NoError(t, <- responseChan)
-	sink.WriteRow(schemas[2], stringRows)
+	sink.WriteRows(stringRows)
 	assert.NoError(t, <- responseChan)
 
 	assert.NoError(t, sink.Exit())
 
-	assert.Equal(t, expectedDates, MustReadFile(fmt.Sprintf("/tmp/%d/all_date_types.csv", os.Getpid())))
-	assert.Regexp(t, expectedNumbersRegexp, MustReadFile(fmt.Sprintf("/tmp/%d/all_number_types.csv", os.Getpid())))
-	assert.Equal(t, expectedStrings, MustReadFile(fmt.Sprintf("/tmp/%d/all_string_types.csv", os.Getpid())))
+	assert.Equal(t, expectedDates, MustReadFile(fmt.Sprintf("/tmp/%d/all_date_types_1.csv", os.Getpid())))
+	assert.Regexp(t, expectedNumbersRegexp, MustReadFile(fmt.Sprintf("/tmp/%d/all_number_types_1.csv", os.Getpid())))
+	assert.Equal(t, expectedStrings, MustReadFile(fmt.Sprintf("/tmp/%d/all_string_types_1.csv", os.Getpid())))
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"time"
 )
 
@@ -94,6 +95,8 @@ func (s *Snapshotter) Exit() {
 }
 
 func (s *Snapshotter) runWorker() error {
+	responseChan := make(chan error)
+
 	for {
 		select {
 		case pi, ok := <-s.PendingIntervalsChan:
@@ -105,8 +108,17 @@ func (s *Snapshotter) runWorker() error {
 			if err != nil {
 				panic(err)
 			}
-			for row := 0; row < result.RowNumber(); row++ {
-				// FIXME WRITE THE THING
+			rowsEvent := rowsEventFromMysqlResult(pi.Schema, result)
+
+			for _, sink := range sinks {
+				sink.WriteRows(rowsEvent)
+			}
+			for _, sink := range sinks {
+				// FIXME: We probably want a timeout here to make some timing guarantees!
+				// We want to know if it looks like a sink has gotten stuck.
+				if err := <-responseChan; err != nil {
+					panic(fmt.Errorf("Error writing to %s sink: %s", reflect.TypeOf(sink).Kind(), err))
+				}
 			}
 
 			s.CompletedIntervalsChan <- pi
@@ -128,9 +140,9 @@ func getRowChunk(pi PendingInterval) (IMysqlResult, error) {
 		if err == nil {
 			return result, nil
 		} else {
-			// FIXME: If the error looks like a schema issue, re-fetch the CREATE TABLE and parse the schema again
-			// before we retry. (We also need some way to notify the sink that this has happened, so this might
-			// need to be done at the runWorker level.)
+			// FIXME: If the error looks like a schema issue, re-fetch the CREATE TABLE and parse the schema
+			// again before we retry. (We also need some way to notify the sink that this has happened, so
+			// this might need to be done at the runWorker level.)
 
 			// 2**8 is about four and a half minutes, which is the longest we'll wait between retries.
 			exponent := retries
@@ -143,4 +155,31 @@ func getRowChunk(pi PendingInterval) (IMysqlResult, error) {
 	}
 
 	return nil, err
+}
+
+func rowsEventFromMysqlResult(schema *TableSchema, result IMysqlResult) RowsEvent {
+	event := RowsEvent{make(chan error), schema, make([][]any, result.RowNumber())}
+
+	for r := 0; r < result.RowNumber(); r++ {
+		event.Data[r] = make([]any, len(schema.Columns))
+		for c, column := range schema.Columns {
+			value, err := result.GetValue(r, c)
+			if err != nil {
+				panic(err)
+			}
+			event.Data[r][c] = convertValueFromMysql(value, column)
+		}
+	}
+	return event
+}
+
+func convertValueFromMysql(value any, column Column) any {
+	if value == nil {
+		return nil
+	}
+
+	switch value.(type) {
+		// ...
+	}
+	return 31337
 }

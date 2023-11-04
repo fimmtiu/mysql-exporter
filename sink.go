@@ -17,11 +17,16 @@ type RowsEvent struct {
 	Data [][]any
 }
 
+type SchemaChangeEvent struct {
+	ResponseChan chan error
+	NewSchema *TableSchema
+}
+
 type Sink interface {
 	Open(ts *TableSchema) error
 	Close(ts *TableSchema) error
-	WriteRows(ts *TableSchema, rows RowsEvent)
-	SchemaChange(newSchema *TableSchema)
+	WriteRows(rows RowsEvent)
+	SchemaChange(oldSchema, newSchema *TableSchema) error
 	Exit() error
 }
 
@@ -57,9 +62,23 @@ func (sink *CsvSink) Close(ts *TableSchema) error {
 	return writer.Exit()
 }
 
-func (sink *CsvSink) WriteRow(ts *TableSchema, rows RowsEvent) {
-	writer := sink.Writers[ts]
+func (sink *CsvSink) WriteRows(rows RowsEvent) {
+	for k, v := range sink.Writers {
+		fmt.Printf("sink.Writers[%s] = %p %v\n", k.Name, v, v)
+	}
+	fmt.Printf("schema: %p, %v (%s)\n", rows.Schema, rows.Schema, rows.Schema.Name)
+	writer := sink.Writers[rows.Schema]
 	writer.RowChan <- rows
+}
+
+func (sink *CsvSink) SchemaChange(oldSchema, newSchema *TableSchema) error {
+	writer := sink.Writers[oldSchema]
+	delete(sink.Writers, oldSchema)
+	sink.Writers[newSchema] = writer
+
+	change := SchemaChangeEvent{make(chan error), newSchema}
+	writer.SchemaChangeChan <- change
+	return <-change.ResponseChan
 }
 
 func (sink *CsvSink) Exit() error {
@@ -69,19 +88,21 @@ func (sink *CsvSink) Exit() error {
 
 type CsvWriter struct {
 	RowChan chan RowsEvent
+	SchemaChangeChan chan SchemaChangeEvent
 	ExitChan chan error
 	WorkerGroup *WorkerGroup
 	Schema *TableSchema
 	File *os.File
+	SchemaVersion int
 }
 
-func NewCsvWriter(ts *TableSchema, workerGroup *WorkerGroup) (*CsvWriter, error) {
+func openCsvFile(ts *TableSchema, version int) (*os.File, error) {
 	err := os.MkdirAll(fmt.Sprintf("/tmp/%d", os.Getpid()), 0755)
 	if err != nil {
 		return nil, err
 	}
 
-	filename := fmt.Sprintf("/tmp/%d/%s.csv", os.Getpid(), ts.Name)
+	filename := fmt.Sprintf("/tmp/%d/%s_%d.csv", os.Getpid(), ts.Name, version)
 	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, err
@@ -98,11 +119,23 @@ func NewCsvWriter(ts *TableSchema, workerGroup *WorkerGroup) (*CsvWriter, error)
 	if err != nil {
 		return nil, err
 	}
+	return file, nil
+}
 
-	return &CsvWriter{make(chan RowsEvent), make(chan error), workerGroup, ts, file}, nil
+func NewCsvWriter(ts *TableSchema, workerGroup *WorkerGroup) (*CsvWriter, error) {
+	file, err := openCsvFile(ts, 1)
+	if err != nil {
+		return nil, err
+	}
+	return &CsvWriter{
+		make(chan RowsEvent), make(chan SchemaChangeEvent), make(chan error),
+		workerGroup, ts, file, 1,
+	}, nil
 }
 
 func (writer *CsvWriter) Run() error {
+	var err error
+
 	for {
 		redo: select {
 		case rows := <-writer.RowChan:
@@ -112,9 +145,9 @@ func (writer *CsvWriter) Run() error {
 					if i > 0 {
 						line += ","
 					}
-					line += formatDatumForCsv(row[i], column)
+					line += convertToCsvString(row[i], column)
 				}
-				_, err := writer.File.WriteString(line + "\n")
+				_, err = writer.File.WriteString(line + "\n")
 				if err != nil {
 					rows.ResponseChan <- err
 					break redo
@@ -123,9 +156,23 @@ func (writer *CsvWriter) Run() error {
 			rows.ResponseChan <- nil
 
 		case <-writer.ExitChan:
-			err := writer.File.Close()
+			err = writer.File.Close()
 			writer.ExitChan <- err
 			return err
+
+		case change := <-writer.SchemaChangeChan:
+			writer.SchemaVersion++
+			writer.Schema = change.NewSchema
+			if err = writer.File.Close(); err != nil {
+				change.ResponseChan <- err
+				return err
+			}
+			writer.File, err = openCsvFile(writer.Schema, writer.SchemaVersion)
+			if err != nil {
+				change.ResponseChan <- err
+				return err
+			}
+			change.ResponseChan <- nil
 
 		case <-writer.WorkerGroup.ExitSignal():
 			return writer.File.Close()
@@ -140,42 +187,42 @@ func (writer *CsvWriter) Exit() error {
 }
 
 var needsQuotesRegexp = regexp.MustCompile(`[,"]`)
-func formatDatumForCsv(datum any, column Column) string {
+func convertToCsvString(datum any, column Column) string {
 	if datum == nil {
 		return ""
 	}
 
-	switch reflect.TypeOf(datum).Kind() {
-	case reflect.String:
+	switch datum.(type) {
+	case string:
 		s := datum.(string)
 		if needsQuotesRegexp.MatchString(s) {
 			s = `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 		}
 		return s
-	case reflect.Int8:   return fmt.Sprintf("%d", datum.(int8))
-	case reflect.Uint8:  return fmt.Sprintf("%d", datum.(uint8))
-	case reflect.Int16:  return fmt.Sprintf("%d", datum.(int16))
-	case reflect.Uint16: return fmt.Sprintf("%d", datum.(uint16))
-	case reflect.Uint32: return fmt.Sprintf("%d", datum.(uint32))
-	case reflect.Int64:  return fmt.Sprintf("%d", datum.(int64))
-	case reflect.Uint64: return fmt.Sprintf("%d", datum.(uint64))
+	case int8:   return fmt.Sprintf("%d", datum.(int8))
+	case uint8:  return fmt.Sprintf("%d", datum.(uint8))
+	case int16:  return fmt.Sprintf("%d", datum.(int16))
+	case uint16: return fmt.Sprintf("%d", datum.(uint16))
+	case uint32: return fmt.Sprintf("%d", datum.(uint32))
+	case int64:  return fmt.Sprintf("%d", datum.(int64))
+	case uint64: return fmt.Sprintf("%d", datum.(uint64))
 
-	case reflect.Int32:
+	case int32:
 		switch column.SqlType {
 		case "date": return `"` + FormatEpochDate(datum.(int32)) + `"`
 		case "time": return `"` + FormatMillisecondTime(datum.(int32)) + `"`
 		default: return fmt.Sprintf("%d", datum.(int32))
 		}
 
-	case reflect.TypeOf(time.Time{}).Kind():
+	case time.Time:
 		t := datum.(time.Time)
 		return `"` + t.Format("2006-01-02 15:04:05") + `"`
 
-	case reflect.TypeOf(big.Int{}).Kind():
+	case big.Int:
 		decimal := datum.(big.Int)
 		return fmt.Sprintf("%s", decimal.String())
 
-	case reflect.Float32, reflect.Float64:
+	case float32, float64:
 		return fmt.Sprintf("%f", datum)
 
 	default:

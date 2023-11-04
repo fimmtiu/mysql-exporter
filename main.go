@@ -20,6 +20,7 @@ var UTC *time.Location
 var stateStorage StateStorage
 var pool IMysqlPool
 var snapshotter *Snapshotter
+var sinks []Sink
 
 // Common code for initializing tests.
 func init() {

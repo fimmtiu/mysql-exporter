@@ -34,3 +34,19 @@ func TestSnapshotterCompletes(t *testing.T) {
 		assert.True(t, snapshotter.Run())
 	})
 }
+
+func TestSnapshotterCompletesWithSink(t *testing.T) {
+	sinks = []Sink{NewCsvSink()}
+	defer func() { sinks = nil }()
+
+	tables := []string{"foo", "bar", "baz", "quux"}
+	for _, table := range tables {
+		sinks[0].Open(&TableSchema{table, []Column{{"id", "bigint", 20, 0, false, false}}})
+	}
+
+	WithConfig("SNAPSHOT_CHUNK_SIZE", "100", func() {
+		state := NewFakeSnapshotState(tables, 10000)
+		snapshotter := NewCustomSnapshotter(state)
+		assert.True(t, snapshotter.Run())
+	})
+}

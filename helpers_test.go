@@ -48,6 +48,10 @@ type FakeMysqlResponse struct {
 	Rows [][]any
 }
 
+func (response *FakeMysqlResponse) GetValue(row, column int) (any, error) {
+	return response.Rows[row][column], nil
+}
+
 func (response *FakeMysqlResponse) GetString(row, column int) (string, error) {
 	return response.Rows[row][column].(string), nil
 }

@@ -22,6 +22,7 @@ type IMysqlClient interface {
 }
 
 type IMysqlResult interface {
+	GetValue(row, column int) (any, error)
 	GetString(row, column int) (string, error)
 	GetInt(row, column int) (int64, error)
 	RowNumber() int
