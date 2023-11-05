@@ -3,15 +3,14 @@ application: dev-tool
 version: "2.0"
 
 setup:
-  go: 1.21.1
+  go: 1.21
 
 commands:
-
   build:
-    summary: Build the mysql-to-s3 binary and Docker container
+    summary: Build the mysql-exporter binary and Docker container
     command: |
       go build
-      docker build -t mysql-to-s3 -f docker/Dockerfile
+      docker build -t mysql-exporter -f docker/Dockerfile .
 
   clean:
     summary: Clean all development binaries and folders
@@ -21,8 +20,9 @@ commands:
   test:
     summary: Run all tests
     command: |
+      dev build
       docker-compose up -d mysql redis
-      INTEGRATION_TESTS=1 go test
+      docker-compose run mysql-exporter -e INTEGRATION_TEST=true
 
   reset:
     summary: Run reset from dev.yml
