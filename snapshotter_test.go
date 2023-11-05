@@ -17,7 +17,7 @@ func TestSnapshotterDoesNoWork(t *testing.T) {
 
 func TestSnapshotterExit(t *testing.T) {
 	SetFakeResponses(
-		FakeMysqlResponse{false, math.MaxInt, []string{"foo"}, [][]any{{"bar"}}},
+		FakeMysqlResponse{false, math.MaxInt, []string{"id"}, [][]any{{uint64(31337)}}},
 	)
 	state := NewFakeSnapshotState([]string{"foo"}, 10)
 	snapshotter := NewCustomSnapshotter(state)
@@ -28,9 +28,13 @@ func TestSnapshotterExit(t *testing.T) {
 }
 
 func TestSnapshotterCompletes(t *testing.T) {
+	SetFakeResponses(
+		FakeMysqlResponse{false, math.MaxInt, []string{"id"}, [][]any{{uint64(31337)}}},
+	)
+	state := NewFakeSnapshotState([]string{"foo", "bar", "baz", "quux"}, 10000)
+	snapshotter := NewCustomSnapshotter(state)
+
 	WithConfig("SNAPSHOT_CHUNK_SIZE", "100", func() {
-		state := NewFakeSnapshotState([]string{"foo", "bar", "baz", "quux"}, 10000)
-		snapshotter := NewCustomSnapshotter(state)
 		assert.True(t, snapshotter.Run())
 	})
 }
@@ -39,13 +43,15 @@ func TestSnapshotterCompletesWithSink(t *testing.T) {
 	sinks = []Sink{NewCsvSink()}
 	defer func() { sinks = nil }()
 
-	tables := []string{"foo", "bar", "baz", "quux"}
-	for _, table := range tables {
-		sinks[0].Open(&TableSchema{table, []Column{{"id", "bigint", 20, 0, false, false}}})
+	SetFakeResponses(
+		FakeMysqlResponse{false, math.MaxInt, []string{"id"}, [][]any{{uint64(31337)}}},
+	)
+	state := NewFakeSnapshotState([]string{"foo", "bar", "baz", "quux"}, 10000)
+	for _, table := range state.(*FakeSnapshotState).Tables {
+		sinks[0].Open(table.Schema)
 	}
 
 	WithConfig("SNAPSHOT_CHUNK_SIZE", "100", func() {
-		state := NewFakeSnapshotState(tables, 10000)
 		snapshotter := NewCustomSnapshotter(state)
 		assert.True(t, snapshotter.Run())
 	})

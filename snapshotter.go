@@ -71,23 +71,28 @@ func (s *Snapshotter) Run() bool {
 				close(s.PendingIntervalsChan)
 				pendingChan = nil
 			}
+
 		case completedInterval := <- s.CompletedIntervalsChan:
 			err := s.State.MarkIntervalDone(completedInterval)
 			if err != nil {
 				panic(err)
 			}
+
 		case <-s.ExitChan:
 			logger.Printf("Signalling all workers to exit.")
 			s.Workers.Exit(nil)
 			s.ExitChan = nil
 			successfulExit = false
+
 		case <-s.Workers.DoneSignal():
 			logger.Printf("The snapshot is complete.")
 			break loop
 		}
 	}
-	s.Workers.Wait()
-	return successfulExit
+
+	err := s.Workers.Wait()
+	fmt.Printf("Snapshot.Run() is done: %s.\n", err)
+	return err == nil && successfulExit
 }
 
 func (s *Snapshotter) Exit() {
@@ -95,12 +100,11 @@ func (s *Snapshotter) Exit() {
 }
 
 func (s *Snapshotter) runWorker() error {
-	responseChan := make(chan error)
-
 	for {
 		select {
 		case pi, ok := <-s.PendingIntervalsChan:
 			if !ok {
+				fmt.Printf("Snapshot worker exited because all pending intervals are done\n")
 				return nil
 			}
 
@@ -116,7 +120,7 @@ func (s *Snapshotter) runWorker() error {
 			for _, sink := range sinks {
 				// FIXME: We probably want a timeout here to make some timing guarantees!
 				// We want to know if it looks like a sink has gotten stuck.
-				if err := <-responseChan; err != nil {
+				if err := <-rowsEvent.ResponseChan; err != nil {
 					panic(fmt.Errorf("Error writing to %s sink: %s", reflect.TypeOf(sink).Kind(), err))
 				}
 			}
@@ -124,6 +128,7 @@ func (s *Snapshotter) runWorker() error {
 			s.CompletedIntervalsChan <- pi
 
 		case <-s.Workers.ExitSignal():
+			fmt.Printf("Snapshot worker exited with ExitSignal\n")
 			return nil
 		}
 	}
@@ -179,7 +184,35 @@ func convertValueFromMysql(value any, column Column) any {
 	}
 
 	switch value.(type) {
-		// ...
+	case uint64:
+		switch column.SqlType {
+		case "bigint": return value.(uint64)
+		case "int": return uint32(value.(uint64))
+		case "smallint": return uint16(value.(uint64))
+		case "tinyint": return uint8(value.(uint64))
+		default: panic(fmt.Errorf("Unknown type for uint64 MySQL value: %s / %s", reflect.TypeOf(value).String(), column.SqlType))
+		}
+	case int64:
+		switch column.SqlType {
+		case "bigint": return value.(int64)
+		case "int": return int32(value.(int64))
+		case "smallint": return int16(value.(int64))
+		case "tinyint": return int8(value.(int64))
+		default: panic(fmt.Errorf("Unknown type for int64 MySQL value: %s / %s", reflect.TypeOf(value).String(), column.SqlType))
+		}
+	case float64:
+		switch column.SqlType {
+		case "float": return float32(value.(float64))
+		case "double": return value.(float64)
+		default: panic(fmt.Errorf("Unknown type for float64 MySQL value: %s / %s", reflect.TypeOf(value).String(), column.SqlType))
+		}
+	case string:
+		switch column.SqlType {
+		case "char", "varchar", "text", "mediumtext", "longtext": return value.(string)
+		case "binary", "varbinary", "tinyblob", "blob", "mediumblob", "longblob": return []byte(value.(string))
+		default: panic(fmt.Errorf("Unknown type for string MySQL value: %s / %s", reflect.TypeOf(value).String(), column.SqlType))
+		}
+	default:
+		panic("Unknown type for MySQL value: " + reflect.TypeOf(value).String())
 	}
-	return 31337
 }

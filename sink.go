@@ -26,7 +26,7 @@ type Sink interface {
 	Open(ts *TableSchema) error
 	Close(ts *TableSchema) error
 	WriteRows(rows RowsEvent)
-	SchemaChange(oldSchema, newSchema *TableSchema) error
+	SchemaChange(newSchema *TableSchema) error
 	Exit() error
 }
 
@@ -35,7 +35,7 @@ type CsvSink struct {
 	Lock sync.Mutex
 	RowsChan chan RowsEvent
 	Workers *WorkerGroup
-	Writers map[*TableSchema]*CsvWriter
+	Writers map[string]*CsvWriter
 }
 
 func NewCsvSink() *CsvSink {
@@ -43,38 +43,40 @@ func NewCsvSink() *CsvSink {
 		sync.Mutex{},
 		make(chan RowsEvent),
 		NewWorkerGroup(),
-		make(map[*TableSchema]*CsvWriter),
+		make(map[string]*CsvWriter),
 	}
 }
 
 func (sink *CsvSink) Open(ts *TableSchema) error {
 	writer, err := NewCsvWriter(ts, sink.Workers)
 	if err == nil {
-		sink.Writers[ts] = writer
+		sink.Writers[ts.Name] = writer
 		sink.Workers.Go(writer.Run)
 	}
 	return err
 }
 
 func (sink *CsvSink) Close(ts *TableSchema) error {
-	writer := sink.Writers[ts]
-	delete(sink.Writers, ts)
+	writer, ok := sink.Writers[ts.Name]
+	if !ok {
+		panic(fmt.Errorf("Can't close non-existent writer for table '%s'!", ts.Name))
+	}
+	delete(sink.Writers, ts.Name)
 	return writer.Exit()
 }
 
 func (sink *CsvSink) WriteRows(rows RowsEvent) {
-	for k, v := range sink.Writers {
-		fmt.Printf("sink.Writers[%s] = %p %v\n", k.Name, v, v)
+	writer, ok := sink.Writers[rows.Schema.Name]
+	if !ok {
+		panic(fmt.Errorf("Can't find writer for table '%s'!", rows.Schema.Name))
 	}
-	fmt.Printf("schema: %p, %v (%s)\n", rows.Schema, rows.Schema, rows.Schema.Name)
-	writer := sink.Writers[rows.Schema]
 	writer.RowChan <- rows
 }
 
-func (sink *CsvSink) SchemaChange(oldSchema, newSchema *TableSchema) error {
-	writer := sink.Writers[oldSchema]
-	delete(sink.Writers, oldSchema)
-	sink.Writers[newSchema] = writer
+func (sink *CsvSink) SchemaChange(newSchema *TableSchema) error {
+	writer := sink.Writers[newSchema.Name]
+	delete(sink.Writers, newSchema.Name)
+	sink.Writers[newSchema.Name] = writer
 
 	change := SchemaChangeEvent{make(chan error), newSchema}
 	writer.SchemaChangeChan <- change
@@ -136,11 +138,11 @@ func NewCsvWriter(ts *TableSchema, workerGroup *WorkerGroup) (*CsvWriter, error)
 func (writer *CsvWriter) Run() error {
 	var err error
 
-	for {
-		redo: select {
+	loop: for {
+		select {
 		case rows := <-writer.RowChan:
 			for _, row := range rows.Data {
-				line := ""
+ 				line := ""
 				for i, column := range writer.Schema.Columns {
 					if i > 0 {
 						line += ","
@@ -150,14 +152,17 @@ func (writer *CsvWriter) Run() error {
 				_, err = writer.File.WriteString(line + "\n")
 				if err != nil {
 					rows.ResponseChan <- err
-					break redo
+					continue loop
 				}
 			}
+			fmt.Printf("%p: waiting for response\n", writer)
 			rows.ResponseChan <- nil
+			fmt.Printf("%p: got response\n", writer)
 
 		case <-writer.ExitChan:
 			err = writer.File.Close()
 			writer.ExitChan <- err
+			fmt.Printf("CsvWriter exited with ExitChan: %s\n", err)
 			return err
 
 		case change := <-writer.SchemaChangeChan:
@@ -165,16 +170,19 @@ func (writer *CsvWriter) Run() error {
 			writer.Schema = change.NewSchema
 			if err = writer.File.Close(); err != nil {
 				change.ResponseChan <- err
+				fmt.Printf("CsvWriter exited with SchemaChange error: %s\n", err)
 				return err
 			}
 			writer.File, err = openCsvFile(writer.Schema, writer.SchemaVersion)
 			if err != nil {
 				change.ResponseChan <- err
+				fmt.Printf("CsvWriter exited with SchemaChange error: %s\n", err)
 				return err
 			}
 			change.ResponseChan <- nil
 
 		case <-writer.WorkerGroup.ExitSignal():
+			fmt.Printf("CsvWriter exited from Exitsignal\n")
 			return writer.File.Close()
 		}
 	}

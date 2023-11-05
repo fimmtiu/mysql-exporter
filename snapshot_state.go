@@ -126,6 +126,7 @@ func (state *RealSnapshotState) addNextPendingInterval(table *SnapshotTableState
 // Mark a table as done. This means that the entire table has been snapshotted and
 // there are no more chunks to process.
 func (state *RealSnapshotState) markTableDone(tableName string) error {
+	logger.Printf("Snapshot of table '%s' is complete.", tableName)
 	delete(state.Tables, tableName)
 	return stateStorage.Set("table_snapshot_progress/" + tableName, "done")
 }
