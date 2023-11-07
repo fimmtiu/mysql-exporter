@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
 // FIXME: Add a retry to the Redis calls.
-// FIXME: Add a timeout to the Redis calls.
+
+const REDIS_TIMEOUT = 5 * time.Second
 
 type StateStorage interface {
 	Get(key string) (string, error)
@@ -26,7 +29,7 @@ type StateStorageRedis struct {
 }
 
 func NewStateStorage() StateStorage {
-	if InTestMode() && !InIntegrationTestMode() {
+	if InTestMode() {
 		return NewStateStorageMemory()
 	} else {
 		return NewStateStorageRedis()
@@ -64,19 +67,35 @@ func NewStateStorageRedis() *StateStorageRedis {
 	return &StateStorageRedis{rdb}
 }
 
+// Returns an empty string if the key doesn't exist.
 func (ssr *StateStorageRedis) Get(key string) (string, error) {
-	return ssr.Client.Get(context.Background(), key).Result()
+	ctx, cancel := context.WithTimeoutCause(context.Background(), REDIS_TIMEOUT, errors.New("Redis get timeout"))
+	defer cancel()
+
+	s, err := ssr.Client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", nil
+	} else if err != nil {
+		return "", err
+	} else {
+		return s, nil
+	}
 }
 
 func (ssr *StateStorageRedis) Set(key string, value string) error {
-	return ssr.Client.Set(context.Background(), key, value, 0).Err()
+	ctx, cancel := context.WithTimeoutCause(context.Background(), REDIS_TIMEOUT, errors.New("Redis set timeout"))
+	defer cancel()
+	return ssr.Client.Set(ctx, key, value, 0).Err()
 }
 
 func (ssr *StateStorageRedis) Delete(key string) error {
-	return ssr.Client.Del(context.Background(), key).Err()
+	ctx, cancel := context.WithTimeoutCause(context.Background(), REDIS_TIMEOUT, errors.New("Redis del timeout"))
+	defer cancel()
+	return ssr.Client.Del(ctx, key).Err()
 }
 
 func (ssr *StateStorageRedis) ClearAll() error {
-	return ssr.Client.FlushAll(context.Background()).Err()
+	ctx, cancel := context.WithTimeoutCause(context.Background(), REDIS_TIMEOUT, errors.New("Redis flushall timeout"))
+	defer cancel()
+	return ssr.Client.FlushAll(ctx).Err()
 }
-

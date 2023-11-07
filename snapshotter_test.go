@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"math"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -52,6 +54,28 @@ func TestSnapshotterCompletesWithSink(t *testing.T) {
 	}
 
 	WithConfig("SNAPSHOT_CHUNK_SIZE", "100", func() {
+		snapshotter := NewCustomSnapshotter(state)
+		assert.True(t, snapshotter.Run())
+	})
+}
+
+func TestSnapshotterIntegration(t *testing.T) {
+	var err error
+	sinks = []Sink{NewCsvSink()}
+	defer func() { sinks = nil }()
+
+	WithIntegrationTestSetup(func () {
+		assert.NoError(t, os.RemoveAll(fmt.Sprintf("/tmp/%d", os.Getpid())))
+		logger.Printf("Writing to /tmp/%d", os.Getpid())
+
+		tables := []string{"all_date_types", "all_number_types", "all_string_types"}
+		schemas := make([]*TableSchema, len(tables))
+		for i, table := range tables {
+			schemas[i], err = GetTableSchema(table)
+			assert.NoError(t, sinks[0].Open(schemas[i]))
+			assert.NoError(t, err)
+		}
+		state := NewSnapshotState(schemas)
 		snapshotter := NewCustomSnapshotter(state)
 		assert.True(t, snapshotter.Run())
 	})

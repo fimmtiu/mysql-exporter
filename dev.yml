@@ -22,7 +22,8 @@ commands:
     command: |
       dev build
       docker-compose up -d mysql redis
-      docker-compose run mysql-exporter -e INTEGRATION_TEST=true
+      INTEGRATION_TESTS=true go test
+    # docker-compose run mysql-exporter -e INTEGRATION_TESTS=true
 
   reset:
     summary: Run reset from dev.yml

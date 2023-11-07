@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"reflect"
 	"time"
 )
@@ -188,29 +189,59 @@ func convertValueFromMysql(value any, column Column) any {
 		switch column.SqlType {
 		case "bigint": return value.(uint64)
 		case "int": return uint32(value.(uint64))
+		case "mediumint": return uint32(value.(uint64))
 		case "smallint": return uint16(value.(uint64))
 		case "tinyint": return uint8(value.(uint64))
-		default: panic(fmt.Errorf("Unknown type for uint64 MySQL value: %s / %s", reflect.TypeOf(value).String(), column.SqlType))
+		default: panic(fmt.Errorf("Unknown type for uint64 MySQL value: %s / %s ('%d')", reflect.TypeOf(value).String(), column.SqlType, value.(uint64)))
 		}
 	case int64:
 		switch column.SqlType {
 		case "bigint": return value.(int64)
 		case "int": return int32(value.(int64))
+		case "mediumint": return int32(value.(int64))
 		case "smallint": return int16(value.(int64))
 		case "tinyint": return int8(value.(int64))
-		default: panic(fmt.Errorf("Unknown type for int64 MySQL value: %s / %s", reflect.TypeOf(value).String(), column.SqlType))
+		default: panic(fmt.Errorf("Unknown type for int64 MySQL value: %s / %s ('%d')", reflect.TypeOf(value).String(), column.SqlType, value.(int64)))
 		}
 	case float64:
 		switch column.SqlType {
 		case "float": return float32(value.(float64))
 		case "double": return value.(float64)
-		default: panic(fmt.Errorf("Unknown type for float64 MySQL value: %s / %s", reflect.TypeOf(value).String(), column.SqlType))
+		default: panic(fmt.Errorf("Unknown type for float64 MySQL value: %s / %s ('%f')", reflect.TypeOf(value).String(), column.SqlType, value.(float64)))
 		}
-	case string:
+	case []uint8:
+		s := string(value.([]uint8))
 		switch column.SqlType {
-		case "char", "varchar", "text", "mediumtext", "longtext": return value.(string)
-		case "binary", "varbinary", "tinyblob", "blob", "mediumblob", "longblob": return []byte(value.(string))
-		default: panic(fmt.Errorf("Unknown type for string MySQL value: %s / %s", reflect.TypeOf(value).String(), column.SqlType))
+		case "char", "varchar", "text", "mediumtext", "longtext":
+			return s
+		case "binary", "varbinary", "blob", "tinyblob", "mediumblob", "longblob":
+			return value.([]uint8)
+		case "decimal":
+			dec, success := big.NewRat(0, 1).SetString(s)
+			if !success {
+				panic(fmt.Errorf("Can't convert string '%s' to decimal", s))
+			}
+			return dec
+		case "date":
+			t, err := time.Parse("2006-01-02", s)
+			if err != nil {
+				panic(err)
+			}
+			return t
+		case "time":
+			t, err := time.Parse("15:04:05", s)
+			if err != nil {
+				panic(err)
+			}
+			return t
+		case "datetime", "timestamp":
+			t, err := time.Parse("2006-01-02 15:04:05", s)
+			if err != nil {
+				panic(err)
+			}
+			return t
+		default:
+			panic(fmt.Errorf("Unknown type for string MySQL value: %s / %s ('%s')", reflect.TypeOf(value).String(), column.SqlType, s))
 		}
 	default:
 		panic("Unknown type for MySQL value: " + reflect.TypeOf(value).String())

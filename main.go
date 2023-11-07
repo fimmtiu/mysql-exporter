@@ -51,6 +51,7 @@ func main() {
 	})
 
 	listenForSignals()
+	pool = NewMysqlPool()
 
 	snapshotter = NewSnapshotter()
 	if snapshotter.Run() {
@@ -74,6 +75,7 @@ func listenForSignals() {
 		case sig := <-terminateChannel:
 			logger.Printf("Received %s signal (%d).", sig.String(), sig)
 			gracefulShutdown()
+
 		case <-panicChannel:
 			panic("OH GOD WE'RE BONED LET'S FREAK OUT")   // For testing the panic behaviour.
 		}

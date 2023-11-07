@@ -60,8 +60,6 @@ github.com/redis/go-redis/v9/internal/pool
 github.com/redis/go-redis/v9/internal/proto
 github.com/redis/go-redis/v9/internal/rand
 github.com/redis/go-redis/v9/internal/util
-# github.com/shopspring/decimal v0.0.0-20180709203117-cd690d0c9e24
-## explicit
 # github.com/siddontang/go v0.0.0-20180604090527-bdc77568d726
 ## explicit
 github.com/siddontang/go/hack

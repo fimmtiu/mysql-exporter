@@ -6,9 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestStateStorage(t *testing.T) {
-	storage := NewStateStorage()
-
+func runStateStorageTest(t *testing.T, storage StateStorage) {
 	s, err := storage.Get("foo")
 	assert.NoError(t, err)
 	assert.Equal(t, "", s)
@@ -42,4 +40,14 @@ func TestStateStorage(t *testing.T) {
 	s, err = storage.Get("bar")
 	assert.NoError(t, err)
 	assert.Equal(t, "", s)
+}
+
+func TestStateStorage(t *testing.T) {
+	runStateStorageTest(t, NewStateStorageMemory())
+}
+
+func TestStateStorageIntegration(t *testing.T) {
+	WithIntegrationTestSetup(func() {
+		runStateStorageTest(t, NewStateStorageRedis())
+	})
 }

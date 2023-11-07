@@ -149,15 +149,14 @@ func (writer *CsvWriter) Run() error {
 					}
 					line += convertToCsvString(row[i], column)
 				}
+				fmt.Printf("Wrote row to %s\n", writer.File.Name())
 				_, err = writer.File.WriteString(line + "\n")
 				if err != nil {
 					rows.ResponseChan <- err
 					continue loop
 				}
 			}
-			fmt.Printf("%p: waiting for response\n", writer)
 			rows.ResponseChan <- nil
-			fmt.Printf("%p: got response\n", writer)
 
 		case <-writer.ExitChan:
 			err = writer.File.Close()
@@ -207,28 +206,31 @@ func convertToCsvString(datum any, column Column) string {
 			s = `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 		}
 		return s
+	case []uint8:
+		// Always quote binary data.
+		return `"` + strings.ReplaceAll(string(datum.([]uint8)), `"`, `""`) + `"`
+
 	case int8:   return fmt.Sprintf("%d", datum.(int8))
 	case uint8:  return fmt.Sprintf("%d", datum.(uint8))
 	case int16:  return fmt.Sprintf("%d", datum.(int16))
 	case uint16: return fmt.Sprintf("%d", datum.(uint16))
+	case int32:  return fmt.Sprintf("%d", datum.(int32))
 	case uint32: return fmt.Sprintf("%d", datum.(uint32))
 	case int64:  return fmt.Sprintf("%d", datum.(int64))
 	case uint64: return fmt.Sprintf("%d", datum.(uint64))
 
-	case int32:
+	case time.Time:
 		switch column.SqlType {
-		case "date": return `"` + FormatEpochDate(datum.(int32)) + `"`
-		case "time": return `"` + FormatMillisecondTime(datum.(int32)) + `"`
-		default: return fmt.Sprintf("%d", datum.(int32))
+		case "datetime", "timestamp": return datum.(time.Time).Format("2006-01-02 15:04:05")
+		case "date": return datum.(time.Time).Format("2006-01-02")
+		case "time": return datum.(time.Time).Format("15:04:05")
+		default: panic(fmt.Errorf("Unexpected time type for CSV: '%s'", column.SqlType))
 		}
 
-	case time.Time:
-		t := datum.(time.Time)
-		return `"` + t.Format("2006-01-02 15:04:05") + `"`
-
-	case big.Int:
-		decimal := datum.(big.Int)
-		return fmt.Sprintf("%s", decimal.String())
+	// THE BIGGEST RAT YOU EVER SAW
+	case *big.Rat:
+		decimal := datum.(*big.Rat)
+		return decimal.String()
 
 	case float32, float64:
 		return fmt.Sprintf("%f", datum)

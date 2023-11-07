@@ -41,6 +41,34 @@ func WithStateStorage(contents map[string]string, fn func()) {
 	fn()
 }
 
+func WithIntegrationTestSetup(fn func()) {
+	if !InIntegrationTestMode() {
+		return
+	}
+
+	oldConfig := config
+	config = NewConfig()
+	// config.MysqlHost = "mysql"
+	// config.MysqlPort = "33306"
+	// config.MysqlDatabase = "test_db"
+	// config.RedisHost = "redis"
+	// config.RedisPort = "63379"
+	config.SnapshotChunkSize = 10
+	defer func() { config = oldConfig }()
+
+	oldStateStorage := stateStorage
+	stateStorage = NewStateStorageRedis()
+	defer func() { stateStorage = oldStateStorage }()
+	stateStorage.ClearAll()
+
+	oldPool := pool
+	pool = NewMysqlPool()
+	PopulateTestData()
+	defer func() { pool = oldPool }()
+
+	fn()
+}
+
 type FakeMysqlResponse struct {
 	Error bool
 	Repeat int

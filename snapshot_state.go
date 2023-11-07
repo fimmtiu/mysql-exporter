@@ -3,6 +3,8 @@ package main
 import (
 	"container/list"
 	"fmt"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type SnapshotTableState struct {
@@ -48,7 +50,7 @@ func NewSnapshotState(tables []*TableSchema) SnapshotState {
 			}
 		} else {
 			progress, err = stateStorage.Get("table_snapshot_progress/" + table.Name)
-			if err != nil {
+			if err != nil && err != redis.Nil {
 				panic(err)
 			}
 		}
@@ -93,6 +95,9 @@ func (state *RealSnapshotState) GetNextPendingInterval() (PendingInterval, bool)
 // Mark a chunk of work as done. If this is the last chunk of work for this table,
 // mark the entire table as done.
 func (state *RealSnapshotState) MarkIntervalDone(pendingInterval PendingInterval) error {
+	logger.Printf("Started MarkIntervalDone for %s (%v)", pendingInterval.Schema.Name, pendingInterval.Interval)
+	defer logger.Printf("Finished MarkIntervalDone for %s (%v)", pendingInterval.Schema.Name, pendingInterval.Interval)
+
 	tableState := state.Tables[pendingInterval.Schema.Name]
 	if tableState.CompletedIntervals.Includes(pendingInterval.Interval) {
 		panic(fmt.Errorf("Interval %v already completed for table %s (%v)", pendingInterval.Interval, tableState.Schema.Name, tableState.CompletedIntervals))
@@ -135,7 +140,7 @@ func (state *RealSnapshotState) markTableDone(tableName string) error {
 // all tables from scratch.
 func needsSnapshot() bool {
 	strpos, err := stateStorage.Get("last_committed_position")
-	if err != nil {
+	if err != nil && err != redis.Nil {
 		panic(fmt.Errorf("Can't read last_committed_position from state storage: %s", err))
 	}
 	position := 0
@@ -143,7 +148,7 @@ func needsSnapshot() bool {
 		position = MustParseInt(strpos)
 	}
 	gtids, err := stateStorage.Get("last_committed_gtid_set")
-	if err != nil {
+	if err != nil && err != redis.Nil {
 		panic(fmt.Errorf("Can't read last_committed_gtid_set from state storage: %s", err))
 	}
 

@@ -46,7 +46,7 @@ func ParseSchema(s string) *TableSchema {
 		}
 		splitLine := strings.SplitN(line, "`", 3)
 		name := splitLine[1]
-		typeInfo := strings.TrimSpace(splitLine[2])
+		typeInfo := strings.Trim(strings.TrimSpace(splitLine[2]), ",")
 		sqlType, width, scale := parseSqlType(strings.SplitN(typeInfo, " ", 2)[0])
 
 		column := NewColumn(
@@ -111,7 +111,7 @@ func NewColumn(name, sqlType string, width, scale int, signed, nullable bool) Co
 // 		}
 
 // 	case "decimal":
-// 		field.Type = reflect.TypeOf(big.Int{})
+// 		field.Type = reflect.TypeOf(big.Rat{})
 
 // 	// Floating-point numbers
 // 	case "float":

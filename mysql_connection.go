@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-mysql-org/go-mysql/client"
 )
 
 const MIN_MYSQL_CONNS = 2
+const MYSQL_GET_CONNECTION_TIMEOUT = 20 * time.Second
+var timeoutError = errors.New("Waited too long for a free MySQL connection!")
 
 type IMysqlPool interface {
 	Execute(query string, args ...interface{}) (IMysqlResult, error)
@@ -34,11 +38,14 @@ type PoolWrapper struct {
 }
 
 func (pw PoolWrapper) Execute(query string, args ...interface{}) (IMysqlResult, error) {
-	conn, err := pw.pool.GetConn(context.Background())
+	ctx, cancel := context.WithTimeoutCause(context.Background(), MYSQL_GET_CONNECTION_TIMEOUT, timeoutError)
+	defer cancel()
+
+	conn, err := pw.GetConn(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer pw.pool.PutConn(conn)
+	defer pw.PutConn(conn)
 
 	return conn.Execute(query, args...)
 }
@@ -69,15 +76,13 @@ type MysqlConnection struct {
 	client IMysqlClient
 }
 
-func init() {
-	if !InTestMode() {
-		hostport := fmt.Sprintf("%s:%s", config.MysqlHost, config.MysqlPort)
-		pool = PoolWrapper{
-			client.NewPool(
-				logger.Printf, MIN_MYSQL_CONNS, config.MaxMysqlConns, MIN_MYSQL_CONNS,
-				hostport, config.MysqlUser, config.MysqlPassword, config.MysqlDatabase,
-			),
-		}
+func NewMysqlPool() IMysqlPool {
+	hostport := fmt.Sprintf("%s:%s", config.MysqlHost, config.MysqlPort)
+	return PoolWrapper{
+		client.NewPool(
+			logger.Printf, MIN_MYSQL_CONNS, config.MaxMysqlConns, MIN_MYSQL_CONNS,
+			hostport, config.MysqlUser, config.MysqlPassword, config.MysqlDatabase,
+		),
 	}
 }
 

@@ -8,7 +8,7 @@ import (
 
 // FIXME: Replace this with the "all_*.sql" equivalents. email_addresses doesn't cover enough cases.
 func TestParseSchema(t *testing.T) {
-	createTable := MustReadFile("test_data/email_addresses_schema.sql")
+	createTable := MustReadFile("test_schemas/email_addresses_schema.sql")
 	schema := ParseSchema(createTable)
 
 	assert.Equal(t, "email_addresses", schema.Name)

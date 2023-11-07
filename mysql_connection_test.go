@@ -88,7 +88,7 @@ func TestGetTableSchema(t *testing.T) {
 		FakeMysqlResponse{  // SHOW CREATE TABLE
 			false, 0,
 			[]string{"Table", "Create Table"},
-			[][]any{{"email_addresses", MustReadFile("test_data/email_addresses_schema.sql")}},
+			[][]any{{"email_addresses", MustReadFile("test_schemas/email_addresses_schema.sql")}},
 		},
 	)
 	schema, err := GetTableSchema("email_addresses")
