@@ -94,15 +94,15 @@ func (state *RealSnapshotState) GetNextPendingInterval() (PendingInterval, bool)
 
 // Mark a chunk of work as done. If this is the last chunk of work for this table,
 // mark the entire table as done.
-func (state *RealSnapshotState) MarkIntervalDone(pendingInterval PendingInterval) error {
-	logger.Printf("Started MarkIntervalDone for %s (%v)", pendingInterval.Schema.Name, pendingInterval.Interval)
-	defer logger.Printf("Finished MarkIntervalDone for %s (%v)", pendingInterval.Schema.Name, pendingInterval.Interval)
+func (state *RealSnapshotState) MarkIntervalDone(pi PendingInterval) error {
+	logger.Printf("Started MarkIntervalDone for %s (%v)", pi.Schema.Name, pi.Interval)
+	defer logger.Printf("Finished MarkIntervalDone for %s (%v)", pi.Schema.Name, pi.Interval)
 
-	tableState := state.Tables[pendingInterval.Schema.Name]
-	if tableState.CompletedIntervals.Includes(pendingInterval.Interval) {
-		panic(fmt.Errorf("Interval %v already completed for table %s (%v)", pendingInterval.Interval, tableState.Schema.Name, tableState.CompletedIntervals))
+	tableState := state.Tables[pi.Schema.Name]
+	if tableState.CompletedIntervals.Includes(pi.Interval) {
+		panic(fmt.Errorf("Interval %v already completed for table %s (%v)", pi.Interval, tableState.Schema.Name, tableState.CompletedIntervals))
 	}
-	tableState.CompletedIntervals = tableState.CompletedIntervals.Merge(pendingInterval.Interval)
+	tableState.CompletedIntervals = tableState.CompletedIntervals.Merge(pi.Interval)
 	if tableState.CompletedIntervals.HighestContiguous() > tableState.MaxId {
 		return state.markTableDone(tableState.Schema.Name)
 	}

@@ -46,7 +46,7 @@ func ParseSchema(s string) *TableSchema {
 		}
 		splitLine := strings.SplitN(line, "`", 3)
 		name := splitLine[1]
-		typeInfo := strings.Trim(strings.TrimSpace(splitLine[2]), ",")
+		typeInfo := strings.Trim(splitLine[2], ", \t\n")
 		sqlType, width, scale := parseSqlType(strings.SplitN(typeInfo, " ", 2)[0])
 
 		column := NewColumn(

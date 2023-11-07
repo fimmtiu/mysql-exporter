@@ -117,8 +117,8 @@ func GetBinlogPosition() (uint64, string, error) {
 	return ParseBinlogPosition(file, pos), gtidset, nil
 }
 
-// The "binlog position" is the binary log's index number in the high 24 bits and the position within that log
-// in the low 40 bits.
+// The "binlog position" is the binary log's index number in the high 24 bits and the position
+// within that log in the low 40 bits.
 func ParseBinlogPosition(file string, pos int64) uint64 {
 	dotIndex := strings.Index(file, ".")
 	return uint64(MustParseInt(file[dotIndex+1:]))<<40 | uint64(pos)

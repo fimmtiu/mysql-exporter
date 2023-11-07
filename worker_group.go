@@ -43,7 +43,7 @@ func (ac *WorkerGroup) Go(fn func() error) {
 	}()
 }
 
-// This returns a channel which will close when all goroutines have naturally exited.
+// This returns a channel which will close when all goroutines have exited.
 func (ac *WorkerGroup) DoneSignal() <-chan struct{} {
 	return ac.doneChan
 }
